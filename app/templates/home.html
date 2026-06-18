@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Ana Panel - ElektroTakip{% endblock %}
+
+{% block content %}
+<div class="bg-white p-8 rounded-xl shadow-sm border border-slate-200">
+    <h1 class="text-3xl font-bold text-slate-800 mb-2">Hoş Geldin!</h1>
+    <p class="text-slate-500 mb-8">ElektroTakip sistemine başarıyla giriş yaptın. İşletmeni buradan yönetebilirsin.</p>
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <div class="p-6 border border-dashed border-slate-300 rounded-xl bg-slate-50 flex flex-col items-center justify-center text-center">
+            <span class="text-4xl mb-3">📦</span>
+            <span class="text-slate-700 font-semibold mb-1">Malzeme Kataloğu</span>
+            <span class="text-sm text-slate-400">Ürünler eklenecek</span>
+        </div>
+        
+        <div class="p-6 border border-dashed border-slate-300 rounded-xl bg-slate-50 flex flex-col items-center justify-center text-center">
+            <span class="text-4xl mb-3">👥</span>
+            <span class="text-slate-700 font-semibold mb-1">Müşteriler</span>
+            <span class="text-sm text-slate-400">Müşteri listesi boş</span>
+        </div>
+        
+        <div class="p-6 border border-dashed border-slate-300 rounded-xl bg-slate-50 flex flex-col items-center justify-center text-center">
+            <span class="text-4xl mb-3">📄</span>
+            <span class="text-slate-700 font-semibold mb-1">Teklifler</span>
+            <span class="text-sm text-slate-400">Henüz teklif yok</span>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
