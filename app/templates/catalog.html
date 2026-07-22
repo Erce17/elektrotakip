@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Malzeme Kataloğu - ElektroTakip{% endblock %}
+
+{% block nav_links %}
+    <a href="/" class="hover:text-blue-200 transition font-medium">Ana Panel</a>
+    <a href="/catalog" class="hover:text-blue-200 transition font-medium border-b-2 border-white pb-1">Katalog</a>
+    <form action="/logout" method="POST" class="m-0 p-0 inline">
+        <button type="submit" class="hover:text-blue-200 transition font-medium bg-transparent border-none cursor-pointer">
+            Çıkış Yap
+        </button>
+    </form> 
+{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex justify-between items-center">
+    <h1 class="text-3xl font-bold text-slate-800">Malzeme Kataloğu</h1>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    
+    <div class="lg:col-span-1 space-y-6">
+    
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h2 class="text-lg font-semibold text-slate-700 mb-4">Yeni Kategori Ekle</h2>
+        <form action="/catalog/category" method="POST" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Kategori Adı</label>
+                <input type="text" name="name" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+            </div>
+            <button type="submit" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 px-4 rounded-lg transition text-sm">
+                Kategori Ekle
+            </button>
+        </form>
+    </div>
+
+    <div class="bg-gradient-to-br from-slate-50 to-blue-50 p-6 rounded-xl shadow-sm border border-blue-100">
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="text-lg font-semibold text-blue-900 flex items-center">
+                <svg class="w-5 h-5 mr-2 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Excel ile Toplu Yükle
+            </h2>
+            <a href="/catalog/download-template" class="text-xs font-semibold text-blue-600 hover:text-blue-800 underline flex items-center">
+                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Şablon İndir
+            </a>
+        </div>
+        <p class="text-xs text-slate-500 mb-4">Verilerinizi önce şablona kopyalayın, ardından sisteme yükleyin.</p>
+        
+        <form action="/catalog/import-excel" method="POST" enctype="multipart/form-data" class="space-y-3">
+            <div class="border-2 border-dashed border-blue-200 rounded-lg p-3 bg-white text-center hover:border-blue-400 transition">
+                <input type="file" name="file" accept=".xlsx" required class="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+            </div>
+            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-lg transition shadow-sm flex items-center justify-center text-sm">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                </svg>
+                Verileri İçeri Aktar
+            </button>
+            <div class="mt-3">
+                <input type="checkbox" id="is_km_price" name="is_km_price" value="true" class="peer hidden">
+                
+                <label for="is_km_price" class="flex items-start p-3 border-2 border-slate-200 rounded-lg cursor-pointer transition-all duration-200 bg-white hover:bg-slate-50 peer-checked:border-red-500 peer-checked:bg-red-50 peer-checked:text-red-700">
+                    
+                    <svg class="w-5 h-5 mr-3 mt-0.5 text-slate-400 peer-checked:text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                    
+                    <div>
+                        <span class="block text-sm font-bold text-slate-700 peer-checked:text-red-700 transition-colors">
+                            DİKKAT: Fiyatları 1000'e Böl (KM Listesi)
+                        </span>
+                        <span class="block text-xs text-slate-500 peer-checked:text-red-600/80 mt-0.5 transition-colors">
+                            Sadece Öznur/Hes gibi 1000 Metre bazlı kablo listeleri yüklerken bu alanı işaretleyin.
+                        </span>
+                    </div>
+                </label>
+            </div>
+        </form>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h2 class="text-lg font-semibold text-slate-700 mb-4">Yeni Malzeme Ekle</h2>
+        <form action="/catalog/product" method="POST" class="space-y-4">
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Teknik Özellik</label>
+                    <input type="text" name="technical_specs" placeholder="Örn: 3x2.5, 25A" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Marka</label>
+                    <input type="text" name="brand" placeholder="Örn: Öznur, Siemens" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Kategori</label>
+                    <select name="category_id" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="">Seçiniz...</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Birim</label>
+                    <select name="unit" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="Adet">Adet</option>
+                        <option value="Metre">Metre</option>
+                        <option value="Kutu">Kutu</option>
+                        <option value="Paket">Paket</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Birim Fiyat (₺)</label>
+                <input type="number" step="0.01" name="unit_price" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+            </div>
+
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm">
+                Malzeme Kaydet
+            </button>
+        </form>
+    </div>
+</div>
+    
+    <div class="lg:col-span-2">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            
+            <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                <h2 class="font-semibold text-slate-700">Mevcut Malzemeler</h2>
+                
+                <div class="relative w-64">
+                    <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <input type="text" 
+                           name="q" 
+                           placeholder="Malzeme, marka veya özellik ara..." 
+                           hx-get="/catalog/search" 
+                           hx-trigger="keyup changed delay:300ms, search" 
+                           hx-target="#catalog-tbody"
+                           class="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-600">
+                    <thead class="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr>
+                            <th class="px-6 py-3 font-medium">Marka</th>
+                            <th class="px-6 py-3 font-medium">Kategori</th>
+                            <th class="px-6 py-3 font-medium">Teknik Özellik</th>
+                            <th class="px-6 py-3 font-medium text-right">Birim Fiyat</th> 
+                            <th class="px-6 py-3 font-medium text-center w-20">İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody id="catalog-tbody" class="divide-y divide-slate-200">
+                        {% include 'partials/catalog_rows.html' %}
+                    </tbody>
+
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -14,4 +12,6 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
     categories = relationship("Category", back_populates="owner", cascade="all, delete-orphan")
+    customers = relationship("Customer", back_populates="owner", cascade="all, delete-orphan")

@@ -31,6 +31,7 @@ class Product(Base):
     vat_rate = Column(Integer, default=20)
     unit = Column(String, default="Adet")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    technical_specs = Column(String, nullable=True) 
 
     # İlişkiler
     category = relationship("Category", back_populates="products")
