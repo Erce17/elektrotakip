@@ -20,6 +20,11 @@ dependencies = [
     "uvicorn[standard]>=0.49.0",
 ]
 
+[tool.pytest.ini_options]
+# Testlerin `app` paketini görebilmesi için kök dizin sys.path'e eklenir
+pythonpath = ["."]
+testpaths = ["tests"]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
