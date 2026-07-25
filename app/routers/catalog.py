@@ -1,4 +1,5 @@
 import io
+from urllib.parse import urlencode
 
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, status
@@ -16,6 +17,9 @@ router = APIRouter(
 )
 
 templates = Jinja2Templates(directory="app/templates")
+
+# Dosyanın tamamı belleğe okunuyor; fiyat listesi dosyaları küçük olur.
+MAX_IMPORT_BYTES = 5 * 1024 * 1024
 
 
 # --- Yardımcılar ---------------------------------------------------------
@@ -69,11 +73,33 @@ def build_product_name(brand: str, technical_specs: str, category_name: str) -> 
     return " ".join(p for p in (brand, technical_specs, category_name) if p).strip()
 
 
+def import_result_redirect(
+    eklendi: int = 0,
+    atlandi: int = 0,
+    fiyatsiz: int = 0,
+    hata: str = "",
+) -> RedirectResponse:
+    """İçe aktarma sonucunu /catalog'a query string ile taşır.
+
+    POST sonrası yönlendirme yapıldığı için sonuç bir sonraki istekte lazım;
+    oturumda flash mesajı tutmak yerine URL'de taşımak yeterli.
+    """
+    params = {"eklendi": eklendi, "atlandi": atlandi, "fiyatsiz": fiyatsiz}
+    if hata:
+        params = {"hata": hata}
+    url = "/catalog?" + urlencode(params)
+    return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
+
+
 # --- Route'lar -----------------------------------------------------------
 
 @router.get("/", response_class=HTMLResponse)
 def get_catalog_page(
     request: Request,
+    eklendi: int = Query(0),
+    atlandi: int = Query(0),
+    fiyatsiz: int = Query(0),
+    hata: str = Query(""),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
@@ -86,10 +112,17 @@ def get_catalog_page(
     )
     products = user_products(db, current_user).all()
 
+    # İçe aktarmadan yönlendirildiysek sonucu bir kez göster
+    ic_aktarma = None
+    if hata:
+        ic_aktarma = {"hata": hata}
+    elif eklendi or atlandi or fiyatsiz:
+        ic_aktarma = {"eklendi": eklendi, "atlandi": atlandi, "fiyatsiz": fiyatsiz}
+
     return templates.TemplateResponse(
         request,
         "catalog.html",
-        {"categories": categories, "products": products}
+        {"categories": categories, "products": products, "ic_aktarma": ic_aktarma}
     )
 
 
@@ -137,11 +170,39 @@ async def import_catalog_excel(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    contents = await file.read()
-    workbook = openpyxl.load_workbook(filename=io.BytesIO(contents), data_only=True)
-    sheet = workbook.active
+    """Excel fiyat listesini kataloğa aktarır. Sonucu özet olarak /catalog'a taşır."""
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        return import_result_redirect(hata="Sadece .xlsx dosyası yükleyebilirsin.")
 
-    for index, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+    contents = await file.read()
+    if not contents:
+        return import_result_redirect(hata="Dosya boş görünüyor.")
+    if len(contents) > MAX_IMPORT_BYTES:
+        return import_result_redirect(
+            hata=f"Dosya çok büyük (en fazla {MAX_IMPORT_BYTES // (1024 * 1024)} MB)."
+        )
+
+    try:
+        workbook = openpyxl.load_workbook(filename=io.BytesIO(contents), data_only=True)
+    except Exception:
+        # openpyxl bozuk/şifreli/eski format dosyalarda çok çeşitli hata atar;
+        # kullanıcı için hepsi aynı sonuca çıkıyor.
+        return import_result_redirect(
+            hata="Dosya okunamadı. Şablonu indirip verilerini onun üzerine yazmayı dene."
+        )
+
+    sheet = workbook.active
+    if sheet is None:
+        return import_result_redirect(hata="Dosyada okunabilir bir sayfa yok.")
+
+    eklendi = 0
+    atlandi = 0
+    fiyatsiz = 0
+    # Aynı dosya içindeki mükerrerleri yakalamak için: DB sorgusu henüz
+    # commit edilmemiş satırları görmez.
+    bu_dosyada_gorulen = set()
+
+    for row in sheet.iter_rows(min_row=2, values_only=True):
         if not any(row):
             continue
 
@@ -151,15 +212,17 @@ async def import_catalog_excel(
         col_fiyat = row[3] if len(row) > 3 else None
         col_birim = str(row[4]).strip() if len(row) > 4 and row[4] is not None else "Adet"
 
-        fiyat = parse_price(col_fiyat) or 0.0
+        fiyat = parse_price(col_fiyat)
+        if fiyat is None:
+            # Satırı atmıyoruz: ürün girsin, fiyatı sonra düzeltilsin. Ama sayısını say.
+            fiyat = 0.0
+            fiyatsiz += 1
 
         # Kullanıcı "Bu fiyatlar KM bazlıdır" dediyse, anında 1000'e böl
         birim = col_birim
         if is_km_price and fiyat > 0:
             fiyat = fiyat / 1000.0
             birim = "Metre"
-
-        malzeme_adi = build_product_name(col_marka, col_spec, col_kat)
 
         # Kategori aramasında user_id şart: aynı isim başka kullanıcıda da olabilir
         category = (
@@ -170,8 +233,12 @@ async def import_catalog_excel(
         if not category:
             category = Category(name=col_kat, user_id=current_user.id)
             db.add(category)
-            db.commit()
-            db.refresh(category)
+            db.flush()  # id lazım; commit dosyanın tamamı bitince
+
+        kimlik = (category.id, col_spec, col_marka)
+        if kimlik in bu_dosyada_gorulen:
+            atlandi += 1
+            continue
 
         existing_product = db.query(Product).filter(
             Product.category_id == category.id,
@@ -179,19 +246,24 @@ async def import_catalog_excel(
             Product.brand == col_marka
         ).first()
 
-        if not existing_product:
-            new_product = Product(
-                name=malzeme_adi,
-                brand=col_marka,
-                category_id=category.id,
-                technical_specs=col_spec,
-                unit_price=fiyat,
-                unit=birim
-            )
-            db.add(new_product)
+        if existing_product:
+            atlandi += 1
+            continue
 
+        db.add(Product(
+            name=build_product_name(col_marka, col_spec, col_kat),
+            brand=col_marka,
+            category_id=category.id,
+            technical_specs=col_spec,
+            unit_price=fiyat,
+            unit=birim
+        ))
+        bu_dosyada_gorulen.add(kimlik)
+        eklendi += 1
+
+    # Tek commit: dosya yarıda hata verirse katalog yarım kalmaz
     db.commit()
-    return RedirectResponse(url="/catalog", status_code=status.HTTP_303_SEE_OTHER)
+    return import_result_redirect(eklendi=eklendi, atlandi=atlandi, fiyatsiz=fiyatsiz)
 
 
 @router.post("/product")

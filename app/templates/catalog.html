@@ -17,6 +17,24 @@
     <h1 class="text-3xl font-bold text-slate-800">Malzeme Kataloğu</h1>
 </div>
 
+{% if ic_aktarma %}
+    {% if ic_aktarma.hata %}
+    <div class="mb-6 p-4 rounded-xl border border-red-200 bg-red-50 text-red-800 text-sm">
+        <span class="font-semibold">İçe aktarma yapılamadı.</span> {{ ic_aktarma.hata }}
+    </div>
+    {% else %}
+    <div class="mb-6 p-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-900 text-sm">
+        <span class="font-semibold">{{ ic_aktarma.eklendi }} malzeme eklendi.</span>
+        {% if ic_aktarma.atlandi %}
+            {{ ic_aktarma.atlandi }} satır zaten kayıtlı olduğu için atlandı.
+        {% endif %}
+        {% if ic_aktarma.fiyatsiz %}
+            <span class="text-amber-700">{{ ic_aktarma.fiyatsiz }} satırın fiyatı okunamadı, 0 olarak kaydedildi — listeden düzeltmen gerekiyor.</span>
+        {% endif %}
+    </div>
+    {% endif %}
+{% endif %}
+
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
     
     <div class="lg:col-span-1 space-y-6">
