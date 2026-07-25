@@ -11,6 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import csrf
 from app.database import Base, get_db
 from app.main import app
 from app.models import User
@@ -35,7 +36,8 @@ def db_session():
 
 
 @pytest.fixture
-def client(db_session):
+def raw_client(db_session):
+    """CSRF token'ı taşımayan istemci. Sadece CSRF testleri için."""
     def override_get_db():
         yield db_session
 
@@ -43,6 +45,18 @@ def client(db_session):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(raw_client):
+    """Normal istemci: tarayıcı gibi CSRF token'ını her istekte taşır.
+
+    Tarayıcıda bunu şablondaki gizli input ve body'deki hx-headers yapıyor;
+    testte tek sefer başlığa koymak aynı işi görüyor.
+    """
+    raw_client.get("/login")  # token cookie'si bu istekte yerleşiyor
+    raw_client.headers[csrf.HEADER_NAME] = raw_client.cookies[csrf.COOKIE_NAME]
+    return raw_client
 
 
 @pytest.fixture
@@ -60,10 +74,14 @@ def make_user(db_session):
 
 
 @pytest.fixture
-def login_as(client):
-    """İstemciyi verilen kullanıcının oturumuna geçirir."""
+def login_as(raw_client):
+    """İstemciyi verilen kullanıcının oturumuna geçirir.
+
+    Bilerek raw_client'a bağlı: client'a bağlansaydı CSRF testleri sırf giriş
+    yapmak için token başlığını da yanında getirir, test ettiği şeyi bozardı.
+    """
 
     def _login_as(token: str):
-        client.cookies.set("access_token", token)
+        raw_client.cookies.set("access_token", token)
 
     return _login_as

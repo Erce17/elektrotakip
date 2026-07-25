@@ -9,7 +9,10 @@
     
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 </head>
-<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
+{# hx-headers burada durunca sayfadaki tüm HTMX istekleri CSRF token'ını taşır;
+   her butona tek tek eklemek gerekmiyor. #}
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col"
+      hx-headers='{"X-CSRF-Token": "{{ request.state.csrf_token }}"}'>
 
     <header class="bg-blue-700 text-white shadow-md">
         <div class="container mx-auto px-4 py-4 flex justify-between items-center">
@@ -22,6 +25,7 @@
                 <a href="/catalog" class="hover:text-blue-200 transition font-medium {% if aktif.startswith('/catalog') %}border-b-2 border-white pb-1{% endif %}">Katalog</a>
                 <a href="/customers" class="hover:text-blue-200 transition font-medium {% if aktif.startswith('/customers') %}border-b-2 border-white pb-1{% endif %}">Müşteriler</a>
                 <form action="/logout" method="POST" class="m-0 p-0 inline">
+                    {% include 'partials/csrf_field.html' %}
                     <button type="submit" class="hover:text-blue-200 transition font-medium bg-transparent border-none cursor-pointer">
                         Çıkış Yap
                     </button>

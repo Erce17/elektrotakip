@@ -1,0 +1,2 @@
+{# Durum değiştiren her form bunu içermeli — bkz. app/csrf.py #}
+<input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">

@@ -4,17 +4,37 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
+from app import csrf
+from app.config import settings
 from app.database import get_db
 from app.dependencies import require_user
 from app.models import Category, Customer, Product, User
 from app.routers import auth, catalog, customers
 
 
-app = FastAPI(title="ElektroTakip")
+# CSRF doğrulaması uygulama geneli: route'a tek tek eklenmediği için unutulamaz
+app = FastAPI(title="ElektroTakip", dependencies=[Depends(csrf.verify_csrf)])
 
 app.include_router(auth.router)
 app.include_router(catalog.router)
 app.include_router(customers.router)
+
+
+@app.middleware("http")
+async def csrf_cookie(request: Request, call_next):
+    """Her istekte bir CSRF token'ı hazır eder ve cookie'de yoksa yerleştirir.
+
+    Şablonlar token'a request.state.csrf_token ile ulaşır; doğrulama işini
+    csrf.verify_csrf yapar.
+    """
+    token = request.cookies.get(csrf.COOKIE_NAME) or csrf.generate_token()
+    request.state.csrf_token = token
+
+    response = await call_next(request)
+
+    if request.cookies.get(csrf.COOKIE_NAME) != token:
+        csrf.set_cookie(response, token, secure=settings.cookie_secure)
+    return response
 
 
 templates = Jinja2Templates(directory="app/templates")

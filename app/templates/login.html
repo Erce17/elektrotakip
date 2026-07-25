@@ -15,6 +15,7 @@
     {% endif %}
     
     <form action="/login" method="POST" class="space-y-5">
+        {% include 'partials/csrf_field.html' %}
         <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">E-posta</label>
             <input type="email" name="email" required 
