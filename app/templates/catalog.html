@@ -2,16 +2,6 @@
 
 {% block title %}Malzeme Kataloğu - ElektroTakip{% endblock %}
 
-{% block nav_links %}
-    <a href="/" class="hover:text-blue-200 transition font-medium">Ana Panel</a>
-    <a href="/catalog" class="hover:text-blue-200 transition font-medium border-b-2 border-white pb-1">Katalog</a>
-    <form action="/logout" method="POST" class="m-0 p-0 inline">
-        <button type="submit" class="hover:text-blue-200 transition font-medium bg-transparent border-none cursor-pointer">
-            Çıkış Yap
-        </button>
-    </form> 
-{% endblock %}
-
 {% block content %}
 <div class="mb-6 flex justify-between items-center">
     <h1 class="text-3xl font-bold text-slate-800">Malzeme Kataloğu</h1>

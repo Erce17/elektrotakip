@@ -16,6 +16,11 @@
             <a href="/" class="text-2xl font-bold tracking-tight">ElektroTakip</a>
            <nav class="space-x-4 flex items-center">
                 {% block nav_links %}
+                {# Bulunulan sayfanın linki alt çizgiyle işaretlenir #}
+                {% set aktif = request.url.path %}
+                <a href="/" class="hover:text-blue-200 transition font-medium {% if aktif == '/' %}border-b-2 border-white pb-1{% endif %}">Ana Panel</a>
+                <a href="/catalog" class="hover:text-blue-200 transition font-medium {% if aktif.startswith('/catalog') %}border-b-2 border-white pb-1{% endif %}">Katalog</a>
+                <a href="/customers" class="hover:text-blue-200 transition font-medium {% if aktif.startswith('/customers') %}border-b-2 border-white pb-1{% endif %}">Müşteriler</a>
                 <form action="/logout" method="POST" class="m-0 p-0 inline">
                     <button type="submit" class="hover:text-blue-200 transition font-medium bg-transparent border-none cursor-pointer">
                         Çıkış Yap

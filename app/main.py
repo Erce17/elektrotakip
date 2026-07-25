@@ -1,12 +1,12 @@
 from fastapi import FastAPI, Request, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.database import get_db
-from app.dependencies import get_current_user
-from app.models import User
+from app.dependencies import require_user
+from app.models import Category, Customer, Product, User
 from app.routers import auth, catalog, customers
 
 
@@ -20,10 +20,25 @@ app.include_router(customers.router)
 templates = Jinja2Templates(directory="app/templates")
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, user: User | None = Depends(get_current_user)):
-    if user is None:
-        return RedirectResponse(url="/login", status_code=303)
-    return templates.TemplateResponse(request, "home.html", {"user": user})
+def home(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    # Ürünün sahibi kategorisi üzerinden belli olur, bu yüzden join gerekiyor
+    urun_sayisi = (
+        db.query(Product)
+        .join(Category)
+        .filter(Category.user_id == user.id)
+        .count()
+    )
+    musteri_sayisi = db.query(Customer).filter(Customer.user_id == user.id).count()
+
+    return templates.TemplateResponse(
+        request,
+        "home.html",
+        {"user": user, "urun_sayisi": urun_sayisi, "musteri_sayisi": musteri_sayisi},
+    )
 
 
 @app.get("/health")

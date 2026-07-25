@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, Request, Form, status
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import require_user
 from app.models import Customer, User
 
 router = APIRouter(
@@ -15,16 +15,22 @@ router = APIRouter(
 templates = Jinja2Templates(directory="app/templates")
 
 
+def get_owned_customer(db: Session, user: User, customer_id: int) -> Customer | None:
+    """Müşteriyi sadece kullanıcıya aitse döner. Değilse None — yoksa da None."""
+    return (
+        db.query(Customer)
+        .filter(Customer.id == customer_id, Customer.user_id == user.id)
+        .first()
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 def get_customers_page(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User = Depends(require_user),
 ):
     """Müşteri listesi sayfasını yükler (sadece giriş yapan kullanıcınınkiler)."""
-    if current_user is None:
-        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-
     customers = (
         db.query(Customer)
         .filter(Customer.user_id == current_user.id)
@@ -44,39 +50,30 @@ def create_customer(
     phone: str = Form(""),
     address: str = Form(""),
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User = Depends(require_user),
 ):
     """Yeni müşteri ekler ve sayfayı yeniler."""
-    if current_user is None:
-        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-
     new_customer = Customer(
         name=name,
         phone=phone,
         address=address,
-        user_id=current_user.id,  # giriş yapan gerçek kullanıcı
+        user_id=current_user.id,
     )
     db.add(new_customer)
     db.commit()
 
     return RedirectResponse(url="/customers", status_code=status.HTTP_303_SEE_OTHER)
 
+
 @router.get("/{customer_id}/edit", response_class=HTMLResponse)
 def edit_customer_form(
     request: Request,
     customer_id: int,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User = Depends(require_user),
 ):
     """Düzenle'ye basınca satırı forma çevirir."""
-    if current_user is None:
-        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-
-    customer = (
-        db.query(Customer)
-        .filter(Customer.id == customer_id, Customer.user_id == current_user.id)
-        .first()
-    )
+    customer = get_owned_customer(db, current_user, customer_id)
     if customer is None:
         return HTMLResponse("", status_code=404)
 
@@ -90,17 +87,10 @@ def get_single_customer_row(
     request: Request,
     customer_id: int,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User = Depends(require_user),
 ):
     """İptal'e basınca veya kaydettikten sonra satırın normal halini döndürür."""
-    if current_user is None:
-        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-
-    customer = (
-        db.query(Customer)
-        .filter(Customer.id == customer_id, Customer.user_id == current_user.id)
-        .first()
-    )
+    customer = get_owned_customer(db, current_user, customer_id)
     if customer is None:
         return HTMLResponse("", status_code=404)
 
@@ -117,17 +107,10 @@ def update_customer(
     phone: str = Form(""),
     address: str = Form(""),
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User = Depends(require_user),
 ):
     """Müşteri bilgilerini günceller, normal satırı geri döndürür."""
-    if current_user is None:
-        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-
-    customer = (
-        db.query(Customer)
-        .filter(Customer.id == customer_id, Customer.user_id == current_user.id)
-        .first()
-    )
+    customer = get_owned_customer(db, current_user, customer_id)
     if customer is None:
         return HTMLResponse("", status_code=404)
 
@@ -145,17 +128,10 @@ def update_customer(
 def delete_customer(
     customer_id: int,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User = Depends(require_user),
 ):
     """Müşteriyi siler. Boş içerik dönünce HTMX satırı yok eder."""
-    if current_user is None:
-        return HTMLResponse("", status_code=401)
-
-    customer = (
-        db.query(Customer)
-        .filter(Customer.id == customer_id, Customer.user_id == current_user.id)
-        .first()
-    )
+    customer = get_owned_customer(db, current_user, customer_id)
     if customer:
         db.delete(customer)
         db.commit()
