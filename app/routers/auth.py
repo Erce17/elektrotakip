@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.templating import templates
 from app.models import User
 from app.security import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -14,7 +14,6 @@ from app.security import (
 )
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/register", response_class=HTMLResponse)

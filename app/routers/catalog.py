@@ -1,13 +1,14 @@
 import io
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.parse import urlencode
 
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.templating import templates
 from app.dependencies import require_user
 from app.models import Category, Product, User
 
@@ -16,10 +17,17 @@ router = APIRouter(
     tags=["Catalog"]
 )
 
-templates = Jinja2Templates(directory="app/templates")
 
 # Dosyanın tamamı belleğe okunuyor; fiyat listesi dosyaları küçük olur.
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
+
+KM_METRE = Decimal(1000)
+
+# unit_price kolonu Numeric(12,4): 8 tam + 4 ondalık basamak.
+# Sınırı aşan değeri kaydetmeye çalışmak Postgres'te DataError'a, yani
+# içe aktarmanın tamamının çökmesine yol açıyor.
+PRICE_DECIMALS = Decimal("0.0001")
+MAX_UNIT_PRICE = Decimal("99999999.9999")
 
 
 # --- Yardımcılar ---------------------------------------------------------
@@ -45,27 +53,98 @@ def get_owned_category(db: Session, user: User, category_id: int) -> Category | 
     )
 
 
-def parse_price(value) -> float | None:
-    """Türkçe fiyat girdisini float'a çevirir. Anlaşılmazsa None.
+def parse_price(value) -> Decimal | None:
+    """Fiyat girdisini Decimal'e çevirir. Anlaşılmazsa None.
 
-    '1.200,50' → 1200.5 · '1200.50' → 1200.5 · '850 TL' → 850.0
-    Kural: hem nokta hem virgül varsa nokta binlik ayracıdır, atılır.
+    Tedarikçi listeleri tek bir formatta gelmiyor; ayracın hangisi olduğuna
+    şu sırayla karar veriyoruz:
+
+    1. Hem nokta hem virgül varsa → SONDAKİ ondalık ayracıdır.
+       '1.200,50' → 1200.50   ·   '1,200.50' → 1200.50
+    2. Sadece virgül varsa → ondalık ayracı (Türkçe varsayılan).
+       '850,75' → 850.75
+    3. Sadece nokta varsa → belirsiz. Birden fazla nokta varsa ya da tek
+       noktadan sonra tam 3 hane varsa binlik ayracıdır:
+       '1.200' → 1200   ·   '1.234.567' → 1234567   ·   '1200.50' → 1200.50
+       Tek istisna: tam sayı kısmı 0 ise ondalıktır ('0.500' → 0.5).
+
+    Decimal kullanılıyor çünkü float ikili tabanda çalışır ve para değerinde
+    yuvarlama hatası biriktirir; DB kolonu da Numeric.
     """
     if value is None:
         return None
-    if isinstance(value, (int, float)):
-        return float(value)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        # Excel hücresi zaten sayı; float'ın ikili gösteriminden kaçınmak için
+        # metin üzerinden Decimal'e geçiyoruz
+        return Decimal(str(value))
 
-    raw = str(value).upper().replace("TL", "").replace(" ", "").strip()
+    raw = str(value).upper()
+    for gereksiz in ("TL", "TRY", "₺", "\xa0"):
+        raw = raw.replace(gereksiz, "")
+    raw = raw.replace(" ", "").strip()
     if not raw:
         return None
-    if "." in raw and "," in raw:
-        raw = raw.replace(".", "")
-    raw = raw.replace(",", ".")
+
+    nokta, virgul = "." in raw, "," in raw
+    if nokta and virgul:
+        if raw.rfind(",") > raw.rfind("."):
+            raw = raw.replace(".", "").replace(",", ".")   # 1.200,50
+        else:
+            raw = raw.replace(",", "")                     # 1,200.50
+    elif virgul:
+        raw = raw.replace(",", ".")
+    elif nokta:
+        tam_kisim, _, son_grup = raw.rpartition(".")
+        binlik = raw.count(".") > 1 or (len(son_grup) == 3 and tam_kisim.strip("-") != "0")
+        if binlik:
+            raw = raw.replace(".", "")
+
     try:
-        return float(raw)
-    except ValueError:
+        return Decimal(raw)
+    except InvalidOperation:
         return None
+
+
+# Tedarikçilerin birim sütununa yazdıkları. Soldaki ham yazımlar, sağdaki
+# bizim kullandığımız karşılık. Listede olmayan bir yazım olduğu gibi kalır.
+BIRIM_KARSILIKLARI = {
+    "KM": "KM", "KM.": "KM", "K.M": "KM", "KMTL": "KM", "1000M": "KM",
+    "1000MT": "KM", "1000METRE": "KM", "KILOMETRE": "KM",
+    "M": "Metre", "MT": "Metre", "MT.": "Metre", "METRE": "Metre", "M.": "Metre",
+    "AD": "Adet", "AD.": "Adet", "ADET": "Adet", "ADT": "Adet",
+    "KUTU": "Kutu", "KT": "Kutu", "KT.": "Kutu", "BOX": "Kutu",
+    "PK": "Paket", "PKT": "Paket", "PAKET": "Paket", "TAKIM": "Takım", "TK": "Takım",
+    "KG": "Kg", "KG.": "Kg", "KILO": "Kg",
+    "ROLE": "Rulo", "RULO": "Rulo",
+}
+
+
+def quantize_price(value: Decimal) -> Decimal:
+    """Fiyatı kolonun tuttuğu basamak sayısına yuvarlar.
+
+    Yuvarlamayı DB'ye bırakmıyoruz: burada yapınca kaydedilen değerle ekranda
+    gösterilen değer aynı oluyor.
+    """
+    return value.quantize(PRICE_DECIMALS, rounding=ROUND_HALF_UP)
+
+
+# Uzunlukla değil sayıyla satılanlar: bunlar hiçbir koşulda 1000'e bölünmez
+ADET_BAZLI_BIRIMLER = {"Adet", "Kutu", "Paket", "Takım", "Kg", "Rulo"}
+
+
+def normalize_unit(raw: str) -> str:
+    """Tedarikçinin yazdığı birimi bizim kullandığımız yazıma çevirir.
+
+    'MT', 'mt.', 'metre' hepsi 'Metre' olur. Böylece aynı birim listede üç
+    farklı isimle görünmüyor ve KM tespiti güvenilir çalışıyor. Boş girdi boş
+    döner — "birim belirtilmemiş" ile "adet" birbirinden ayrılabilsin diye.
+    """
+    if not raw or not raw.strip():
+        return ""
+    anahtar = raw.upper().replace(" ", "").replace("/", "").strip()
+    return BIRIM_KARSILIKLARI.get(anahtar, raw.strip())
 
 
 def build_product_name(brand: str, technical_specs: str, category_name: str) -> str:
@@ -210,19 +289,33 @@ async def import_catalog_excel(
         col_spec = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
         col_marka = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
         col_fiyat = row[3] if len(row) > 3 else None
-        col_birim = str(row[4]).strip() if len(row) > 4 and row[4] is not None else "Adet"
+        col_birim = str(row[4]).strip() if len(row) > 4 and row[4] is not None else ""
 
         fiyat = parse_price(col_fiyat)
         if fiyat is None:
             # Satırı atmıyoruz: ürün girsin, fiyatı sonra düzeltilsin. Ama sayısını say.
-            fiyat = 0.0
+            fiyat = Decimal(0)
             fiyatsiz += 1
 
-        # Kullanıcı "Bu fiyatlar KM bazlıdır" dediyse, anında 1000'e böl
-        birim = col_birim
-        if is_km_price and fiyat > 0:
-            fiyat = fiyat / 1000.0
+        birim = normalize_unit(col_birim)
+
+        # KM → metre dönüşümü satır bazlı: tedarikçi dosyalarında birimler
+        # karışık geliyor, tek kutucuk dosyanın tamamı için doğru olmuyor.
+        # Satır KM diyorsa her hâlükârda çevrilir. Kutucuk işaretliyse metre
+        # ve birimi belirtilmemiş satırlar da çevrilir; adet bazlı olanlara
+        # (kutu, paket, takım...) dokunulmaz — yanlış çevrimin asıl kaynağı buydu.
+        satir_km = birim == "KM" or (is_km_price and birim not in ADET_BAZLI_BIRIMLER)
+        if satir_km and fiyat > 0:
+            fiyat = fiyat / KM_METRE
             birim = "Metre"
+
+        if fiyat > MAX_UNIT_PRICE:
+            # DB kolonunun sınırını aşıyor; kaydetmeye çalışırsak içe aktarmanın
+            # tamamı çöker. Ürünü al, fiyatı kullanıcı düzeltsin.
+            fiyat = Decimal(0)
+            fiyatsiz += 1
+        else:
+            fiyat = quantize_price(fiyat)
 
         # Kategori aramasında user_id şart: aynı isim başka kullanıcıda da olabilir
         category = (
@@ -256,7 +349,7 @@ async def import_catalog_excel(
             category_id=category.id,
             technical_specs=col_spec,
             unit_price=fiyat,
-            unit=birim
+            unit=birim or "Adet"
         ))
         bu_dosyada_gorulen.add(kimlik)
         eklendi += 1
@@ -271,7 +364,7 @@ def create_product(
     technical_specs: str = Form(""),
     brand: str = Form(""),
     category_id: int = Form(...),
-    unit_price: float = Form(...),
+    unit_price: str = Form(...),  # '1.200,50' de yazılabilsin diye string
     vat_rate: int = Form(20),
     unit: str = Form("Adet"),
     db: Session = Depends(get_db),
@@ -282,14 +375,19 @@ def create_product(
     if category is None:
         return HTMLResponse("Kategori bulunamadı.", status_code=404)
 
+    # Excel'deki ayrıştırmanın aynısı: elle eklerken de '1.200,50' yazılabilsin
+    fiyat = parse_price(unit_price)
+    if fiyat is None or fiyat < 0 or fiyat > MAX_UNIT_PRICE:
+        return HTMLResponse("Birim fiyat okunamadı.", status_code=400)
+
     new_product = Product(
         name=build_product_name(brand, technical_specs, category.name),
         technical_specs=technical_specs,
         brand=brand,
         category_id=category.id,
-        unit_price=unit_price,
+        unit_price=quantize_price(fiyat),
         vat_rate=vat_rate,
-        unit=unit
+        unit=normalize_unit(unit) or "Adet"
     )
     db.add(new_product)
     db.commit()
@@ -406,16 +504,18 @@ def update_product(
     if category is None:
         return HTMLResponse("", status_code=404)
 
-    # Hatalı fiyat girilirse eski fiyatta bırak
+    # Hatalı ya da sınır dışı fiyat girilirse eski fiyatta bırak
     fiyat = parse_price(unit_price)
-    if fiyat is None:
+    if fiyat is None or fiyat < 0 or fiyat > MAX_UNIT_PRICE:
         fiyat = product.unit_price
+    else:
+        fiyat = quantize_price(fiyat)
 
     product.technical_specs = technical_specs
     product.brand = brand
     product.category_id = category.id
     product.unit_price = fiyat
-    product.unit = unit
+    product.unit = normalize_unit(unit) or product.unit
     product.name = build_product_name(brand, technical_specs, category.name)
 
     db.commit()

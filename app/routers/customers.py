@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.templating import templates
 from app.dependencies import require_user
 from app.models import Customer, User
 
@@ -12,7 +12,6 @@ router = APIRouter(
     tags=["customers"]
 )
 
-templates = Jinja2Templates(directory="app/templates")
 
 
 def get_owned_customer(db: Session, user: User, customer_id: int) -> Customer | None:

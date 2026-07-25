@@ -17,7 +17,7 @@
     
     <td class="px-2 py-3">
         <div class="flex items-center space-x-1 justify-end">
-            <input type="text" name="unit_price" value="{{ '{:.2f}'.format(product.unit_price).replace('.', ',') }}" class="w-20 px-2 py-1.5 text-sm border border-blue-300 rounded text-right focus:ring-2 focus:ring-blue-500 outline-none">
+            <input type="text" name="unit_price" value="{{ product.unit_price | fiyat }}" class="w-20 px-2 py-1.5 text-sm border border-blue-300 rounded text-right focus:ring-2 focus:ring-blue-500 outline-none">
             <span class="text-slate-500 text-sm">₺/</span>
             <select name="unit" class="w-20 px-1 py-1.5 text-sm border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 outline-none">
                 <option value="Adet" {% if product.unit == 'Adet' %}selected{% endif %}>Adet</option>

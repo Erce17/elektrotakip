@@ -1,12 +1,12 @@
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app import csrf
 from app.config import settings
 from app.database import get_db
+from app.templating import templates
 from app.dependencies import require_user
 from app.models import Category, Customer, Product, User
 from app.routers import auth, catalog, customers
@@ -37,7 +37,6 @@ async def csrf_cookie(request: Request, call_next):
     return response
 
 
-templates = Jinja2Templates(directory="app/templates")
 
 @app.get("/", response_class=HTMLResponse)
 def home(

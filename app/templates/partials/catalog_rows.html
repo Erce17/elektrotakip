@@ -8,7 +8,7 @@
     </td>
     <td class="px-6 py-4 text-slate-500 text-sm">{{ product.technical_specs or '-' }}</td>
     <td class="px-6 py-4 font-semibold text-slate-700 text-right whitespace-nowrap">
-        {{ "{:,.2f}".format(product.unit_price).replace(',', 'X').replace('.', ',').replace('X', '.') }} ₺ / {{ product.unit or 'Adet' }}
+        {{ product.unit_price | fiyat }} ₺ / {{ product.unit or 'Adet' }}
     </td>
     <td class="px-6 py-4 text-center flex justify-center space-x-2">
         <button hx-get="/catalog/product/{{ product.id }}/edit" 

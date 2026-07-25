@@ -26,8 +26,9 @@ class Product(Base):
     brand = Column(String)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     
-    # PostgreSQL için fiyatlarda (10 basamaklı, 2'si ondalık) Numeric kullanıyoruz
-    unit_price = Column(Numeric(10, 2), nullable=False) 
+    # Numeric(12,4): 8 tam + 4 ondalık basamak. Ondalık 2 iken KM fiyatı metreye
+    # bölününce ucuz malzemelerin fiyatı sıfıra yuvarlanıyordu (0,004 → 0,00).
+    unit_price = Column(Numeric(12, 4), nullable=False)
     vat_rate = Column(Integer, default=20)
     unit = Column(String, default="Adet")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
