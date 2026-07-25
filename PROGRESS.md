@@ -4,78 +4,118 @@
 
 ## Son oturum
 **Tarih:** 2026-07-26 (Thufir)
-**Yapılanlar:** Denetim raporlandı, kritik güvenlik açığı kapatıldı, katalog auth ve veri
-izolasyonuna bağlandı, Excel içe aktarma sağlamlaştırıldı, proje geneli tutarlılık
-temizliği yapıldı. Test altyapısı ilk kez çalışır durumda: **68 test geçiyor.**
+**Yapılanlar:** Tam kod denetimi yapıldı, kritik bulgular kapatıldı. Sırasıyla: sızmış
+`SECRET_KEY` rotasyonu, katalog auth + veri izolasyonu, Excel içe aktarmanın
+sağlamlaştırılması, tutarlılık/arayüz temizliği, CSRF koruması, fiyat–birim–veri tipi
+düzeltmeleri. **144 test geçiyor** (oturum başında sıfır test vardı).
 
-Commit'ler: `244e7ff` (SECRET_KEY) · `be5db5a` (katalog auth+izolasyon) ·
-`0344c06` (Excel) · `8c72e92` (temizlik). İlki push edildi, **son üçü henüz push edilmedi.**
+`main` push edilmiş durumda, unpushed commit yok.
 
-## Kapatılanlar
-- **SECRET_KEY sızıntısı (kritik).** `.env`'deki anahtar rotasyona sokuldu, `.env.example`
-  placeholder'a çevrildi. `.env` git geçmişinde hiç yok, temiz. Railway canlı olmadığı
-  için (trial bitmiş) orada yapılacak bir şey yok — **canlıya çıkarken `SECRET_KEY` ve
-  `COOKIE_SECURE=true` ortam değişkeni olarak verilmeli.**
-- **Katalog auth'suzdu.** `require_user` dependency'si eklendi (`app/dependencies.py`):
-  koruma artık route imzasında, gövdede değil. Yetkisizde 303 → `/login`, HTMX isteğinde
-  401 + `HX-Redirect`. `catalog.py` ve `customers.py` aynı kalıpta.
-- **`user_id=1` hardcode'u ve IDOR.** Ürün erişimi `user_products` / `get_owned_product` /
-  `get_owned_category` yardımcılarına toplandı; sahiplik zinciri (Product → Category →
-  user) tek yerde. Kategori değiştirme de kontrol ediliyor.
+## ⚠️ Yarın ilk iş: kablo parametreleri
+Erce gerçek tedarikçi kataloglarını ve aşağıdaki soruların cevaplarını getirecek.
+**Cevaplar gelmeden ayrıştırıcı yazma** — tahminle yazılan parser ilk farklı dosyada kırılır.
+
+### Sorun
+`technical_specs` tek bir uzun metin ve içindeki parametreler ayrıştırılmamış:
+```
+PVC İzoleli, Kılıfsız, Tek Damarlı, Tek Telli Bakır İletkenli | TS EN 50525-2-31 | CPR: Eca | 2.5 mm² | Ambalaj: R100
+```
+Sonuçları: (a) kesit sayı olmadığı için `2.5–6 mm² arası` gibi filtre yapılamıyor,
+"3x2.5 bakır" gibi sahada konuşulan ifadeyle bulunamıyor; (b) ürün adı
+`marka + technical_specs + kategori` olarak derlendiği için liste okunmuyor;
+(c) `Ambalaj: R100 / M1000` bilgisi tamamen görmezden geliniyor (M1000 = 1000 m makara,
+fiyat birimiyle ilişkili olabilir).
+
+### Önerilen çözüm (Erce onaylarsa)
+`technical_specs` metni korunur, karar veren parametreler ayrı kolonlara çıkarılır:
+`cross_section` (Numeric, mm²) · `core_count` (Integer) · `conductor` (bakır/alüminyum) ·
+`insulation` (PVC/XLPE) · `sheathed` (Boolean). İçe aktarmada bir ayrıştırıcı bunları
+metinden çıkarır, çıkaramadığı satır sayısını Excel özetindeki gibi raporlar.
+Ürün adı kısaltılır (`Öznur NYA 2.5 mm² Bakır`), uzun metin ayrı sütunda kalır.
+
+Ayrı kolon tercih edildi (EAV veya JSON değil): alanlar az sayıda, sayısal ve aralık
+sorgusu istiyor; index'lenebilir ve okunur kalıyor.
+
+### Erce'den beklenenler
+1. **3-5 gerçek tedarikçi Excel'i** — özellikle Öznur dışı ve düzensiz olanlar. En kritik olan bu.
+2. **Sahada kullanılan arama ifadeleri** — müşteri "3x2.5 NYY" mi diyor, "5x16 bakır" mı?
+3. **Kablo dışı ürünlerde ayırt edici parametreler** (anahtar/priz/sigortada amper, kutup
+   sayısı, IP sınıfı) — aynı yapı onlara da kurulsun mu, şimdilik sadece kablo mu?
+
+## Veri durumu
+- **Eski 66 ürün silindi** (Erce'nin kararı: birimlerinin metre mi km mi olduğu artık
+  hatırlanmıyordu, yarın gerçek kataloglar yüklenecek). Silmeden önce
+  `yedek_urunler_2026-07-26.csv` olarak dışa aktarıldı — proje kökünde, git'e dahil değil
+  (`.gitignore`'da `yedek_*.csv`).
+- Boş kalan `Kablo` kategorisi (id=1, user_id=1) duruyor. Gerçek kataloglar yüklenirken
+  gerekirse silinir.
+- DB'de 3 kullanıcı var.
+
+## Bu oturumda kapatılanlar
+- **SECRET_KEY sızıntısı (kritik).** Rotasyona sokuldu, `.env.example` placeholder oldu.
+  `.env` git geçmişinde hiç yok. Railway trial bitmiş, canlı değil — **canlıya çıkarken
+  `SECRET_KEY` ve `COOKIE_SECURE=true` ortam değişkeni olarak verilmeli.**
+- **Katalog auth'suzdu ve izolasyonsuzdu.** `require_user` dependency'si eklendi: koruma
+  route imzasında, gövdede değil, unutulamaz. `user_id=1` hardcode'u ve IDOR kapatıldı;
+  sahiplik zinciri `user_products` / `get_owned_product` / `get_owned_category`'de toplandı.
 - **Excel içe aktarma.** Uzantı/boyut/boş dosya kontrolü, bozuk dosyada 500 yerine mesaj,
-  sonuç özeti (eklenen/atlanan/fiyatı okunamayan) sayfada gösteriliyor, tek commit
-  (yarım içe aktarma yok), aynı dosyadaki mükerrerler de yakalanıyor.
-- **Fiyat ayrıştırma** iki farklı kopyadan tek `parse_price`'a indi; anlaşılmazsa `None`
-  döner, ne yapılacağına çağıran karar verir.
-- **Gezinme.** Linkler `base.html`'e taşındı, her sayfadan Katalog/Müşteriler erişilebilir.
-  Ana panel sabit metin yerine gerçek ürün/müşteri sayısını gösteriyor.
-- **Ölü kod:** kök `main.py` ve `app/schemas.py` silindi.
-- **Cookie `secure`** bayrağı eklendi, `COOKIE_SECURE` ile ayarlanıyor.
+  sonuç özeti, tek commit (yarım içe aktarma yok), aynı dosyadaki mükerrerler.
+- **CSRF koruması.** Çift gönderim; doğrulama uygulama geneli dependency olduğu için
+  route'a eklemek gerekmiyor. Token httpOnly cookie'de, şablona sunucu basıyor,
+  HTMX tarafı `base.html`'deki tek `hx-headers` ile çözüldü.
+- **Fiyat ayrıştırma.** `1.200` → 1,2 (1000 kat sapma), `1.200.000` → okunamıyor,
+  `1,200.50` → 1,2005 hatalarının üçü de düzeltildi. `float` yerine `Decimal`.
+- **Birim.** KM → metre dönüşümü satır bazlı oldu. Satır `KM` diyorsa kutucuk işaretsiz
+  olsa da çevriliyor; adet bazlı satırlar kutucuk işaretliyken bile bölünmüyor.
+  `MT`/`mt.`/`metre` tek biçime getiriliyor. **"Milyon TL" probleminin kaynağı buydu.**
+- **Para veri tipi.** `Numeric(10,2)` → `Numeric(12,4)` (migration `a096f2c15539`).
+  İki ondalıkta KM fiyatı metreye bölününce ucuz malzeme `0,00`'a yuvarlanıyordu.
+  Kolon sınırını aşan değer artık 500 yerine raporlanıyor.
+- **Tutarlılık.** `customers.py` da `require_user` kalıbında; gezinme `base.html`'e taşındı;
+  ana panel gerçek sayıları gösteriyor; `Jinja2Templates` tek nesnede (`app/templating.py`)
+  ve `fiyat` filtresi orada; ölü kod (`schemas.py`, kök `main.py`) silindi.
 
-## Şu an nerede kaldık
-Denetim listesindeki kritik ve yüksek maddeler bitti. Kalanlar aşağıda, önceliklendirilmiş.
-
-### Sırada (denetimden kalan, önem sırasıyla)
-1. **G4 — CSRF koruması yok.** `samesite=lax` POST'u kısmen korur, HTMX'in PUT/DELETE
-   isteklerini korumaz. Tek gerçek güvenlik açığı olarak bu kaldı.
-2. **G7 — parola politikası ve e-posta doğrulaması yok.** Tek karakterlik parola kabul
-   ediliyor. `schemas.py` bunun içindi ama kullanılmadığı için silindi; doğrulama
-   `auth.py`'a yazılmalı.
-3. **G6 — `python-jose` bakımsız,** bilinen CVE'leri var. `PyJWT`'ye geçiş küçük iş.
-4. **Y2 — kategori silme/düzenleme yok.** Ekleme var, gerisi yok.
-5. **T6 — `vat_rate`** modelde ve ekleme formunda var ama listede görünmüyor,
-   güncellemede yok. Teklif/fatura için KDV lazım olacak.
-6. **T7 — `Customer.balance`** modelde var, hiçbir yerde kullanılmıyor. Ya cari hesap
-   ekranı yazılacak ya alan kaldırılacak.
-7. **T8 — migration zinciri kirli.** İki boş (`pass`) migration, bir tanesinin adı
-   yaptığı işi anlatmıyor. Zincir çalışıyor, sadece okunaksız. Düşük öncelik.
-8. **T10 — Tailwind CDN'den çekiliyor,** üretim için önerilmiyor.
-9. **Y4 — teklif/fatura modülü** hiç yok. Ana panelde placeholder duruyor.
+## Sırada (kablo işinden sonra)
+1. **G7 — parola politikası ve e-posta doğrulaması yok.** Tek karakterlik parola kabul ediliyor.
+2. **G6 — `python-jose` bakımsız**, bilinen CVE'leri var. `PyJWT`'ye geçiş küçük iş.
+3. **Y2 — kategori silme/düzenleme yok.**
+4. **T6 — `vat_rate`** modelde ve ekleme formunda var, listede görünmüyor, güncellemede yok.
+5. **T7 — `Customer.balance`** modelde var, hiçbir yerde kullanılmıyor.
+6. **T8 — migration zinciri kirli** (iki boş `pass` migration, adı işini anlatmayan bir tane).
+7. **T10 — Tailwind CDN'den çekiliyor**, üretim için önerilmiyor.
+8. **Y4 — teklif/fatura modülü** yok; ana panelde placeholder duruyor.
 
 ## Test durumu
-`uv run pytest` → 68 test. Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
-- `test_catalog_isolation.py` — erişim kontrolü + IDOR (26)
-- `test_excel_import.py` — KM çevrimi, Türkçe sayı formatı, mükerrer, bozuk girdi (12)
-- `test_customers_isolation.py` — müşteri izolasyonu (12)
-- `test_home.py` — ana panel sayıları, gezinme (8)
-- `test_parse_price.py` — fiyat ayrıştırma (10)
+`uv run pytest` → 144 test. Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
+- `test_catalog_isolation.py` — erişim kontrolü + IDOR
+- `test_customers_isolation.py` — müşteri izolasyonu
+- `test_csrf.py` — CSRF (token'sız/yanlış token/form alanı/şablona basılma)
+- `test_excel_import.py` — mükerrer, bozuk girdi, boş satır
+- `test_units.py` — KM dönüşümü, birim normalleştirme, kolon sınırı
+- `test_parse_price.py` — fiyat ayrıştırma ve Türkçe gösterim
+- `test_home.py` — ana panel sayıları, gezinme
 
 ## Açık sorular / kararlar
-- Katalog auth'u eklendiğinden `user_id=1` ile yazılmış eski dev verisi artık kimseye
-  görünmüyor olabilir. Erce'nin lokal DB'sinde ne durumda, temizlensin mi?
+- Kablo parametreleri: yukarıdaki üç madde.
 - Teklif/fatura modülü yeni bir router mı, katalog altında mı?
-- `Customer.balance` kalacak mı?
+- `Customer.balance` kalacak mı, kaldırılacak mı?
 
 ## Öğrenilenler
 | Konu | Ne öğrenildi | Tarih |
 |---|---|---|
-| Sır yönetimi | `.env.example` bir şablondur, gerçek değer taşımaz. Üretilen anahtar doğrudan `.env`'e yazılır, örnek dosyaya placeholder konur. | 2026-07-25 |
-| Auth tasarımı | Yetkisizde `None` dönen dependency, korumayı her route'ta elle yazmayı zorunlu kılar; bir yerde unutulunca açık oluşur. Doğrusu hata fırlatan zorunlu bir dependency: koruma imzada durur, unutulamaz. | 2026-07-26 |
-| Sahiplik zinciri | Ürünün `user_id`'si olmadığı için her sorgu `join(Category)` ister. Bunu her route'ta tekrar yazmak yerine tek yardımcıya toplamak, açığın tekrar açılmasını engelliyor. | 2026-07-26 |
-| Test yazmanın anı | İzolasyon düzeltmesiyle birlikte yazılan test, düzeltmenin kendisinden değerli: aynı açığın tekrar açılmasını engelliyor. | 2026-07-26 |
+| Sır yönetimi | `.env.example` bir şablondur, gerçek değer taşımaz. | 2026-07-25 |
+| Auth tasarımı | Yetkisizde `None` dönen dependency, korumayı her route'ta elle yazmayı zorunlu kılar; bir yerde unutulunca açık oluşur. Doğrusu hata fırlatan zorunlu dependency: koruma imzada durur. | 2026-07-26 |
+| Sahiplik zinciri | Ürünün `user_id`'si olmadığı için her sorgu `join(Category)` ister. Tek yardımcıya toplamak açığın tekrar açılmasını engelliyor. | 2026-07-26 |
+| Testin anı | Çalışan koda dokunmadan önce test yaz. `customers.py` refactor'ü bu sırayla yapıldı. | 2026-07-26 |
+| Fixture zinciri | Test fixture'ı, test edilen korumayı sessizce sağlayabilir. CSRF testleri `login_as` üzerinden token'ı da alıyordu; `raw_client`'a ayrıldı. | 2026-07-26 |
+| Ayrıştırma kararı | `parse_price` "anlamadım" için `None` döner; 0 mı yazılacak eski değer mi korunacak kararı çağırana ait. Kararı fonksiyonun içine gömmek iki farklı kopya doğurmuştu. | 2026-07-26 |
+| Para tipi | Para `float` ile tutulmaz; `Decimal` + `Numeric`. Ondalık basamak sayısı da bir tasarım kararı: 2 basamak KM→metre bölümünde veriyi siliyordu. | 2026-07-26 |
 
 ## Vault özeti (Olric'e taşınacak)
-Elektrotakip denetimi tamamlandı ve kritik bulgular kapatıldı. Sızmış JWT anahtarı
-rotasyona sokuldu; katalog modülü tamamen auth'suz ve veri izolasyonsuzdu, bağlandı
-(IDOR dahil). Excel içe aktarma sağlamlaştırıldı. Proje ilk kez test kapsamına girdi:
-68 test. Kalan en önemli açık CSRF koruması.
+Elektrotakip denetimi tamamlandı ve tüm kritik/yüksek bulgular kapatıldı: sızmış JWT
+anahtarı rotasyonu, katalogun auth ve veri izolasyonuna bağlanması (IDOR dahil), CSRF
+koruması, Excel içe aktarmanın sağlamlaştırılması. Fiyat ayrıştırmada 1000 kat sapmaya
+yol açan hata ve "milyon TL" şikâyetinin kaynağı olan KM/metre birim karışıklığı
+düzeltildi; para kolonu `Numeric(12,4)`e çıkarıldı. Proje sıfırdan 144 teste ulaştı.
+Sıradaki iş kablo parametrelerinin yapılandırılması — Erce gerçek tedarikçi kataloglarıyla
+dönecek.

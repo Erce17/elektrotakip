@@ -4,3 +4,6 @@ __pycache__/
 .env
 .ruff_cache/
 .pytest_cache/
+
+# Yerel veri dokumleri (DB yedegi, disari cikan raporlar)
+yedek_*.csv
