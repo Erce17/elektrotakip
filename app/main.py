@@ -8,8 +8,8 @@ from app.config import settings
 from app.database import get_db
 from app.templating import templates
 from app.dependencies import require_user
-from app.models import Category, Customer, Product, User
-from app.routers import auth, catalog, customers
+from app.models import Category, Customer, Product, Quote, User
+from app.routers import auth, catalog, customers, quotes
 
 
 # CSRF doğrulaması uygulama geneli: route'a tek tek eklenmediği için unutulamaz
@@ -18,6 +18,7 @@ app = FastAPI(title="ElektroTakip", dependencies=[Depends(csrf.verify_csrf)])
 app.include_router(auth.router)
 app.include_router(catalog.router)
 app.include_router(customers.router)
+app.include_router(quotes.router)
 
 
 @app.middleware("http")
@@ -52,11 +53,17 @@ def home(
         .count()
     )
     musteri_sayisi = db.query(Customer).filter(Customer.user_id == user.id).count()
+    teklif_sayisi = db.query(Quote).filter(Quote.user_id == user.id).count()
 
     return templates.TemplateResponse(
         request,
         "home.html",
-        {"user": user, "urun_sayisi": urun_sayisi, "musteri_sayisi": musteri_sayisi},
+        {
+            "user": user,
+            "urun_sayisi": urun_sayisi,
+            "musteri_sayisi": musteri_sayisi,
+            "teklif_sayisi": teklif_sayisi,
+        },
     )
 
 

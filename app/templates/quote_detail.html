@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}{{ quote.number }} - ElektroTakip{% endblock %}
+
+{% block content %}
+
+<div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    <div>
+        <div class="flex items-center gap-2">
+            <h1 class="text-2xl font-bold text-slate-800 font-mono">{{ quote.number }}</h1>
+            {% if quote.version > 1 %}
+            <span class="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">revizyon {{ quote.version }}</span>
+            {% endif %}
+        </div>
+        <p class="text-slate-500 text-sm">{{ quote.title or "İsimsiz teklif" }}</p>
+    </div>
+    <a href="/quotes" class="text-sm text-slate-500 hover:text-slate-800">← Tekliflere dön</a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+    {# --- Sol: teklif başlığı ve kalem ekleme --- #}
+    <div class="lg:col-span-1 space-y-6">
+
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-semibold text-slate-700 mb-4">Teklif Bilgileri</h2>
+            <form action="/quotes/{{ quote.id }}" method="POST" class="space-y-3">
+                {% include 'partials/csrf_field.html' %}
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">İş Adı</label>
+                    <input type="text" name="title" value="{{ quote.title or '' }}"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Müşteri</label>
+                    <select name="customer_id" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                        <option value="">— seçilmedi —</option>
+                        {% for c in customers %}
+                        <option value="{{ c.id }}" {% if quote.customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Para Birimi</label>
+                        <select name="currency" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                            {% for p in para_birimleri %}
+                            <option value="{{ p }}" {% if quote.currency == p %}selected{% endif %}>{{ p }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Geçerlilik</label>
+                        <input type="date" name="valid_until"
+                               value="{{ quote.valid_until.isoformat() if quote.valid_until else '' }}"
+                               class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Not</label>
+                    <textarea name="notes" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">{{ quote.notes or '' }}</textarea>
+                </div>
+                <button type="submit" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 rounded-lg text-sm transition">
+                    Kaydet
+                </button>
+            </form>
+            <p class="text-xs text-slate-400 mt-3">
+                Para birimini değiştirmek eklenmiş kalemlerin dondurulmuş fiyatını
+                <strong>değiştirmez</strong>. Fiyat teklife alındığı anda sabitlenir.
+            </p>
+        </div>
+
+        <div class="bg-blue-50 p-6 rounded-xl border border-blue-200">
+            <h2 class="text-lg font-semibold text-slate-700 mb-4">Katalogdan Kalem Ekle</h2>
+            <form hx-post="/quotes/{{ quote.id }}/items" hx-target="#teklif-govde" hx-swap="outerHTML"
+                  class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Malzeme</label>
+                    <select name="product_id" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+                        <option value="">— seç —</option>
+                        {% for u in urunler %}
+                        <option value="{{ u.id }}">{{ u.name[:70] }} · {{ u.unit_price | fiyat }} {{ u.currency }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Miktar</label>
+                        <input type="text" name="quantity" value="1" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Kur</label>
+                        <input type="text" name="fx_rate" value="1" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">İskonto zinciri</label>
+                    <input type="text" name="discounts" placeholder="20/10"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    <p class="text-xs text-slate-400 mt-1">%20 sonra %10 → %28 iner, %30 değil.</p>
+                </div>
+                <button type="submit" class="w-full bg-blue-700 hover:bg-blue-800 text-white font-medium py-2 rounded-lg text-sm transition">
+                    Kalemi Ekle
+                </button>
+            </form>
+            <p class="text-xs text-slate-500 mt-3">
+                Ürün başka para biriminde ise kuru buraya yaz — teklife o kurla donar.
+            </p>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-semibold text-slate-700 mb-4">Elle Kalem / İşçilik</h2>
+            <form hx-post="/quotes/{{ quote.id }}/items" hx-target="#teklif-govde" hx-swap="outerHTML"
+                  class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Açıklama</label>
+                    <input type="text" name="name" required placeholder="Örn. Kablo çekim işçiliği"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Miktar</label>
+                        <input type="text" name="quantity" value="1" class="w-full px-2 py-2 border border-slate-300 rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Birim</label>
+                        <input type="text" name="unit" value="Adet" class="w-full px-2 py-2 border border-slate-300 rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Fiyat</label>
+                        <input type="text" name="unit_price" value="0" class="w-full px-2 py-2 border border-slate-300 rounded-lg text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Tür</label>
+                        <select name="kind" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                            {% for anahtar, etiket in kalem_turleri.items() %}
+                            <option value="{{ anahtar }}">{{ etiket }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">KDV %</label>
+                        <input type="text" name="vat_rate" value="20" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    </div>
+                </div>
+                <button type="submit" class="w-full bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 rounded-lg text-sm transition">
+                    Kalemi Ekle
+                </button>
+            </form>
+            <p class="text-xs text-slate-400 mt-3">
+                İşçilik seçilirse kalem <strong>iskontoya tabi değil</strong> olarak eklenir.
+                Sektörde işçiliğe iskonto genelde uygulanmıyor; gerekirse kalem satırından
+                değiştirebilirsin.
+            </p>
+        </div>
+
+    </div>
+
+    {# --- Sağ: kalemler, zincir, toplamlar --- #}
+    <div class="lg:col-span-2">
+        {% include 'partials/quote_body.html' %}
+    </div>
+
+</div>
+{% endblock %}

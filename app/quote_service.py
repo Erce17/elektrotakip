@@ -57,20 +57,36 @@ def zincir_girdisi(adjustment: QuoteAdjustment) -> motor.ZincirSatiri:
     )
 
 
+def hesaba_giren_kalemler(quote: Quote) -> list[QuoteItem]:
+    """Motora beslenen kalemleri, beslendikleri sırayla döner.
+
+    Ekran motorun çıktısını DB kalemiyle eşleştirmek zorunda (silme/düzenleme
+    düğmeleri için). Bu eşleştirmeyi indeks saymaya bırakmak, bileşen kalemleri
+    devreye girdiği gün sessizce kayardı: motor bileşenleri atlıyor, `quote.items`
+    atlamıyor. Filtre tek yerde dursun ki ikisi ayrışmasın.
+    """
+    return [
+        i
+        for i in sorted(quote.items, key=lambda i: i.position)
+        if i.parent_item_id is None  # bileşenler bugün ayrı kalem olarak girmiyor
+    ]
+
+
+def zincir_satirlari(quote: Quote) -> list[QuoteAdjustment]:
+    """Teklif seviyesi zincir adımlarını uygulanma sırasıyla döner."""
+    return sorted(quote.adjustments, key=lambda a: a.position)
+
+
 def hesapla(quote: Quote) -> motor.TeklifSonuc:
     """Kayıtlı teklifi hesaplar. DB'ye yazmaz, sadece okur."""
     varsayilan_kdv = Decimal(20)
     if quote.owner is not None and quote.owner.quote_defaults is not None:
         varsayilan_kdv = _ondalik(quote.owner.quote_defaults.vat_rate, varsayilan_kdv)
 
-    kalemler = [
-        kalem_girdisi(i)
-        for i in sorted(quote.items, key=lambda i: i.position)
-        if i.parent_item_id is None  # bileşenler bugün ayrı kalem olarak girmiyor
-    ]
+    kalemler = [kalem_girdisi(i) for i in hesaba_giren_kalemler(quote)]
     # `quote.adjustments` yalnızca teklif seviyesini taşır; kalem zinciri kalemin
     # kendi `adjustments`'ında ve `kalem_girdisi` içinde uygulanıyor.
-    zincir = [zincir_girdisi(a) for a in sorted(quote.adjustments, key=lambda a: a.position)]
+    zincir = [zincir_girdisi(a) for a in zincir_satirlari(quote)]
     return motor.hesapla(kalemler, zincir, varsayilan_kdv=varsayilan_kdv)
 
 

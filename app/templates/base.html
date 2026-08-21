@@ -22,6 +22,7 @@
                 {# Bulunulan sayfanın linki alt çizgiyle işaretlenir #}
                 {% set aktif = request.url.path %}
                 <a href="/" class="hover:text-blue-200 transition font-medium {% if aktif == '/' %}border-b-2 border-white pb-1{% endif %}">Ana Panel</a>
+                <a href="/quotes" class="hover:text-blue-200 transition font-medium {% if aktif.startswith('/quotes') %}border-b-2 border-white pb-1{% endif %}">Teklifler</a>
                 <a href="/catalog" class="hover:text-blue-200 transition font-medium {% if aktif.startswith('/catalog') %}border-b-2 border-white pb-1{% endif %}">Katalog</a>
                 <a href="/customers" class="hover:text-blue-200 transition font-medium {% if aktif.startswith('/customers') %}border-b-2 border-white pb-1{% endif %}">Müşteriler</a>
                 <form action="/logout" method="POST" class="m-0 p-0 inline">

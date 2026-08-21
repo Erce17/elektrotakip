@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Teklifler - ElektroTakip{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+    <div class="lg:col-span-1">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-semibold text-slate-700 mb-1">Yeni Teklif</h2>
+            <p class="text-xs text-slate-500 mb-4">
+                Numara otomatik verilir: <span class="font-mono">{{ yeni_numara }}</span>.
+                Müşteri seçersen varsayılan iskonto zinciri teklife kopyalanır.
+            </p>
+            <form action="/quotes" method="POST" class="space-y-4">
+                {% include 'partials/csrf_field.html' %}
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">İş Adı</label>
+                    <input type="text" name="title" placeholder="Örn. Villa elektrik tesisatı"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Müşteri</label>
+                    <select name="customer_id" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="">— seçilmedi —</option>
+                        {% for c in customers %}
+                        <option value="{{ c.id }}">{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="w-full bg-blue-700 hover:bg-blue-800 text-white font-medium py-2 px-4 rounded-lg transition text-sm">
+                    Teklif Aç
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="lg:col-span-2">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-200">
+                <h2 class="text-lg font-semibold text-slate-700">Teklifler</h2>
+            </div>
+
+            {% if quotes %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+                        <tr>
+                            <th class="text-left px-4 py-3">No</th>
+                            <th class="text-left px-4 py-3">İş / Müşteri</th>
+                            <th class="text-left px-4 py-3">Geçerlilik</th>
+                            <th class="text-right px-4 py-3">Genel Toplam</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for q in quotes %}
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <a href="/quotes/{{ q.id }}" class="font-mono text-blue-700 hover:underline">{{ q.number }}</a>
+                                {% if q.version > 1 %}
+                                <span class="ml-1 text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">rev {{ q.version }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3">
+                                <a href="/quotes/{{ q.id }}" class="text-slate-800 hover:underline">{{ q.title or "İsimsiz teklif" }}</a>
+                                <div class="text-xs text-slate-400">{{ q.customer.name if q.customer else "müşteri seçilmedi" }}</div>
+                            </td>
+                            <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
+                                {{ q.valid_until.strftime('%d.%m.%Y') if q.valid_until else "-" }}
+                            </td>
+                            <td class="px-4 py-3 text-right font-semibold text-slate-800 whitespace-nowrap">
+                                {{ toplamlar[q.id] | fiyat }} {{ q.currency }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="px-6 py-12 text-center text-slate-400 text-sm">
+                Henüz teklif yok. Soldaki formdan ilkini aç.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}

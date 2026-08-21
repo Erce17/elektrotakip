@@ -1,0 +1,281 @@
+{# Teklifin hesaba giren kısmı: kalemler, zincir, toplamlar.
+
+   Tek parça hâlinde dönüyor. Sebebi: bir kalemin iskontosu teklifin toplamını da,
+   zincir adımının etkisini de değiştiriyor. Kısmi güncelleme üç bölümü ayrı ayrı
+   tazelemeyi gerektirirdi ve biri unutulduğunda ekranda yanlış rakam kalırdı. #}
+<div id="teklif-govde" class="space-y-6">
+
+{# --- Kalemler --- #}
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-slate-700">Kalemler</h2>
+        <span class="text-xs text-slate-400">{{ sonuc.kalemler | length }} satır</span>
+    </div>
+
+    {% if sonuc.kalemler %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+                <tr>
+                    <th class="text-left px-4 py-2">Açıklama</th>
+                    <th class="text-right px-2 py-2">Miktar</th>
+                    <th class="text-right px-2 py-2">Br. Fiyat</th>
+                    <th class="text-right px-2 py-2">İskonto</th>
+                    <th class="text-right px-2 py-2">Net</th>
+                    <th class="text-right px-2 py-2">KDV</th>
+                    <th class="px-2 py-2"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                {# Eşleştirme router'da açıkça kuruldu (`kalem_ciftleri`), burada indeks
+                   sayılmıyor. Zincirin eklediği satırların (işçilik, nakliye) DB karşılığı
+                   yok; onlarda `item` None kalıyor ve düzenleme kutuları çıkmıyor. #}
+                {% for k, item in kalem_ciftleri %}
+                <tr class="hover:bg-slate-50 align-top">
+                    <td class="px-4 py-2">
+                        <div class="text-slate-800">{{ k.ad }}</div>
+                        <div class="text-xs text-slate-400">
+                            {% if k.tur != 'malzeme' %}<span class="bg-slate-100 px-1 rounded">{{ kalem_turleri.get(k.tur, k.tur) }}</span>{% endif %}
+                            {% if not k.iskontoya_tabi %}<span class="text-amber-600">iskontoya tabi değil</span>{% endif %}
+                            {% if item and item.source_currency != quote.currency %}
+                            <span>{{ item.source_unit_price | fiyat }} {{ item.source_currency }} × {{ item.fx_rate | fiyat }}</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="px-2 py-2 text-right whitespace-nowrap">{{ k.miktar | fiyat }}</td>
+                    <td class="px-2 py-2 text-right whitespace-nowrap">{{ k.birim_fiyat | fiyat }}</td>
+                    <td class="px-2 py-2 text-right whitespace-nowrap text-slate-500">
+                        {% if k.kalem_iskontosu %}-{{ k.kalem_iskontosu | fiyat }}{% endif %}
+                        {% if k.zincir_iskontosu %}<div class="text-xs text-blue-600">-{{ k.zincir_iskontosu | fiyat }} zincir</div>{% endif %}
+                    </td>
+                    <td class="px-2 py-2 text-right font-medium whitespace-nowrap">{{ k.net | fiyat }}</td>
+                    <td class="px-2 py-2 text-right text-slate-500 whitespace-nowrap">
+                        {{ k.kdv | fiyat }}
+                        <div class="text-xs text-slate-400">%{{ k.kdv_orani | fiyat(0) }}</div>
+                    </td>
+                    <td class="px-2 py-2 text-right">
+                        {% if item %}
+                        <button hx-delete="/quotes/{{ quote.id }}/items/{{ item.id }}"
+                                hx-target="#teklif-govde" hx-swap="outerHTML"
+                                hx-confirm="Bu kalem silinsin mi?"
+                                class="text-red-600 hover:text-red-800 text-xs">Sil</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% if item %}
+                <tr class="bg-slate-50/50">
+                    <td colspan="7" class="px-4 pb-3">
+                        <form hx-post="/quotes/{{ quote.id }}/items/{{ item.id }}"
+                              hx-target="#teklif-govde" hx-swap="outerHTML"
+                              class="flex flex-wrap items-end gap-2 text-xs">
+                            <label class="flex flex-col">
+                                <span class="text-slate-400 mb-0.5">Miktar</span>
+                                <input type="text" name="quantity" value="{{ item.quantity | fiyat }}"
+                                       class="w-20 px-2 py-1 border border-slate-300 rounded">
+                            </label>
+                            <label class="flex flex-col">
+                                <span class="text-slate-400 mb-0.5">Br. fiyat</span>
+                                <input type="text" name="unit_price" value="{{ item.unit_price | fiyat }}"
+                                       class="w-24 px-2 py-1 border border-slate-300 rounded">
+                            </label>
+                            <label class="flex flex-col">
+                                <span class="text-slate-400 mb-0.5">İskonto</span>
+                                <input type="text" name="discounts" placeholder="20/10"
+                                       value="{{ item.adjustments | map(attribute='value') | map('fiyat', 0) | join('/') }}"
+                                       class="w-24 px-2 py-1 border border-slate-300 rounded">
+                            </label>
+                            <label class="flex flex-col">
+                                <span class="text-slate-400 mb-0.5">KDV %</span>
+                                <input type="text" name="vat_rate" value="{{ item.vat_rate | fiyat(0) }}"
+                                       class="w-16 px-2 py-1 border border-slate-300 rounded">
+                            </label>
+                            <label class="flex items-center gap-1 pb-1">
+                                <input type="checkbox" name="discountable" value="true"
+                                       {% if item.discountable %}checked{% endif %}>
+                                <span class="text-slate-500">iskontoya tabi</span>
+                            </label>
+                            <button type="submit" class="px-3 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded">
+                                Güncelle
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="px-6 py-10 text-center text-slate-400 text-sm">
+        Henüz kalem yok. Soldaki formlardan malzeme veya işçilik ekle.
+    </div>
+    {% endif %}
+</div>
+
+{# --- Hesap zinciri --- #}
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-200">
+        <h2 class="text-lg font-semibold text-slate-700">Hesap Zinciri</h2>
+        <p class="text-xs text-slate-500 mt-1">
+            Adımlar yukarıdan aşağıya sırayla uygulanır. <strong>Sıra sonucu değiştirir:</strong>
+            iskonto önce mi işçilik önce mi, çıkan rakam farklı olur.
+        </p>
+    </div>
+
+    {% if sonuc.zincir %}
+    <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+            <tr>
+                <th class="text-left px-4 py-2">Adım</th>
+                <th class="text-left px-2 py-2">Kapsam</th>
+                <th class="text-right px-2 py-2">Taban</th>
+                <th class="text-right px-2 py-2">Etki</th>
+                <th class="px-2 py-2"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+            {% for z, adim in zincir_ciftleri %}
+            <tr class="hover:bg-slate-50">
+                <td class="px-4 py-2">
+                    <span class="text-slate-400 font-mono text-xs mr-1">{{ loop.index }}.</span>
+                    <span class="text-slate-800">{{ z.ad }}</span>
+                    <span class="text-xs text-slate-400 ml-1">
+                        {{ zincir_turleri.get(z.tur, z.tur) }}
+                        {% if z.tur in ('iskonto_yuzde', 'ek_yuzde') %}%{{ z.deger | fiyat(0) }}{% else %}{{ z.deger | fiyat }}{% endif %}
+                    </span>
+                </td>
+                <td class="px-2 py-2 text-xs text-slate-500">
+                    {% if adim.scope == 'tumu' %}tüm kalemler{% else %}iskontoya tabi olanlar{% endif %}
+                    {% if adim.base == 'kalem_toplami' %}<div class="text-slate-400">taban: kalem toplamı</div>{% endif %}
+                </td>
+                <td class="px-2 py-2 text-right text-slate-500 whitespace-nowrap">{{ z.taban_tutar | fiyat }}</td>
+                <td class="px-2 py-2 text-right font-medium whitespace-nowrap {% if z.etki < 0 %}text-emerald-700{% else %}text-slate-800{% endif %}">
+                    {{ z.etki | fiyat }}
+                </td>
+                <td class="px-2 py-2 text-right whitespace-nowrap">
+                    <form hx-post="/quotes/{{ quote.id }}/adjustments/{{ adim.id }}/move"
+                          hx-target="#teklif-govde" hx-swap="outerHTML" class="inline">
+                        <input type="hidden" name="yon" value="up">
+                        <button type="submit" class="text-slate-400 hover:text-slate-700 px-1" title="Yukarı">↑</button>
+                    </form>
+                    <form hx-post="/quotes/{{ quote.id }}/adjustments/{{ adim.id }}/move"
+                          hx-target="#teklif-govde" hx-swap="outerHTML" class="inline">
+                        <input type="hidden" name="yon" value="down">
+                        <button type="submit" class="text-slate-400 hover:text-slate-700 px-1" title="Aşağı">↓</button>
+                    </form>
+                    <button hx-delete="/quotes/{{ quote.id }}/adjustments/{{ adim.id }}"
+                            hx-target="#teklif-govde" hx-swap="outerHTML"
+                            class="text-red-600 hover:text-red-800 text-xs ml-1">Sil</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="px-6 py-6 text-center text-slate-400 text-sm">
+        Zincir boş. Genel iskonto, işçilik veya nakliye eklemek için aşağıdaki formu kullan.
+    </div>
+    {% endif %}
+
+    <div class="px-6 py-4 bg-slate-50 border-t border-slate-200">
+        <form hx-post="/quotes/{{ quote.id }}/adjustments" hx-target="#teklif-govde" hx-swap="outerHTML"
+              class="flex flex-wrap items-end gap-2 text-xs">
+            <label class="flex flex-col">
+                <span class="text-slate-500 mb-0.5">Adım</span>
+                <select name="kind" class="px-2 py-1.5 border border-slate-300 rounded bg-white">
+                    {% for anahtar, etiket in zincir_turleri.items() %}
+                    <option value="{{ anahtar }}">{{ etiket }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="flex flex-col">
+                <span class="text-slate-500 mb-0.5">Değer</span>
+                <input type="text" name="value" value="0" class="w-20 px-2 py-1.5 border border-slate-300 rounded">
+            </label>
+            <label class="flex flex-col">
+                <span class="text-slate-500 mb-0.5">Etiket</span>
+                <input type="text" name="label" placeholder="Bayi iskontosu"
+                       class="w-36 px-2 py-1.5 border border-slate-300 rounded">
+            </label>
+            <label class="flex flex-col">
+                <span class="text-slate-500 mb-0.5">Kapsam</span>
+                <select name="scope" class="px-2 py-1.5 border border-slate-300 rounded bg-white">
+                    <option value="iskontoya_tabi">İskontoya tabi kalemler</option>
+                    <option value="tumu">Tüm kalemler</option>
+                </select>
+            </label>
+            <label class="flex flex-col">
+                <span class="text-slate-500 mb-0.5">Taban</span>
+                <select name="base" class="px-2 py-1.5 border border-slate-300 rounded bg-white">
+                    <option value="yuruyen">Yürüyen tutar</option>
+                    <option value="kalem_toplami">Kalem toplamı</option>
+                </select>
+            </label>
+            <label class="flex flex-col">
+                <span class="text-slate-500 mb-0.5">Eklenen tür</span>
+                <select name="added_kind" class="px-2 py-1.5 border border-slate-300 rounded bg-white">
+                    {% for anahtar, etiket in kalem_turleri.items() %}
+                    <option value="{{ anahtar }}" {% if anahtar == 'diger' %}selected{% endif %}>{{ etiket }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="flex flex-col">
+                <span class="text-slate-500 mb-0.5">KDV %</span>
+                <input type="text" name="vat_rate" placeholder="20" class="w-16 px-2 py-1.5 border border-slate-300 rounded">
+            </label>
+            <button type="submit" class="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded">
+                Adım Ekle
+            </button>
+        </form>
+        <p class="text-xs text-slate-400 mt-2">
+            "Yürüyen tutar" o ana kadar oluşmuş tutarı, "kalem toplamı" iskontodan önceki
+            liste tutarını taban alır. İşçiliği liste tutarının yüzdesi olarak hesaplıyorsan
+            ikincisini seç.
+        </p>
+    </div>
+</div>
+
+{# --- Toplamlar --- #}
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+    <table class="w-full text-sm">
+        <tbody>
+            <tr>
+                <td class="py-1 text-slate-500">Kalem ara toplamı</td>
+                <td class="py-1 text-right text-slate-600">{{ sonuc.kalem_ara_toplami | fiyat }}</td>
+            </tr>
+            {% for z in sonuc.zincir %}
+            <tr>
+                <td class="py-1 text-slate-500 pl-4">{{ z.ad }}</td>
+                <td class="py-1 text-right {% if z.etki < 0 %}text-emerald-700{% else %}text-slate-600{% endif %}">{{ z.etki | fiyat }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="border-t border-slate-200">
+                <td class="py-2 font-medium text-slate-700">Ara toplam (KDV hariç)</td>
+                <td class="py-2 text-right font-medium">{{ sonuc.ara_toplam | fiyat }}</td>
+            </tr>
+            {# KDV oran bazlı dökülüyor: karışık oranlı teklifte tek satır yanlış olur
+               ve e-fatura da oran bazlı döküm istiyor. #}
+            {% for oran, dagilim in sonuc.kdv_dagilimi.items() %}
+            <tr>
+                <td class="py-1 text-slate-500 pl-4">KDV %{{ oran | fiyat(0) }} <span class="text-xs text-slate-400">(matrah {{ dagilim[0] | fiyat }})</span></td>
+                <td class="py-1 text-right text-slate-600">{{ dagilim[1] | fiyat }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="border-t-2 border-slate-300">
+                <td class="py-2 text-lg font-bold text-slate-800">Genel Toplam</td>
+                <td class="py-2 text-right text-lg font-bold text-slate-800">
+                    {{ sonuc.genel_toplam | fiyat }} {{ quote.currency }}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+    {% if quote.valid_until %}
+    <p class="text-xs text-slate-400 mt-4">
+        Fiyatlar {{ quote.valid_until.strftime('%d.%m.%Y') }} tarihine kadar geçerlidir.
+        Kalemlerin fiyatı teklife alındığı anda dondurulmuştur; katalog güncellense de
+        bu teklif değişmez.
+    </p>
+    {% endif %}
+</div>
+
+</div>

@@ -23,11 +23,12 @@
             <span class="text-sm text-slate-400">{% if musteri_sayisi %}kayıtlı müşteri{% else %}henüz müşteri yok{% endif %}</span>
         </a>
 
-        <div class="p-6 border border-dashed border-slate-300 rounded-xl bg-slate-50 flex flex-col items-center justify-center text-center">
+        <a href="/quotes" class="p-6 border border-slate-200 rounded-xl bg-white hover:border-blue-400 hover:shadow-sm transition flex flex-col items-center justify-center text-center">
             <span class="text-4xl mb-3">📄</span>
             <span class="text-slate-700 font-semibold mb-1">Teklifler</span>
-            <span class="text-sm text-slate-400">Bu modül henüz yazılmadı</span>
-        </div>
+            <span class="text-2xl font-bold text-blue-700">{{ teklif_sayisi }}</span>
+            <span class="text-sm text-slate-400">{% if teklif_sayisi %}hazırlanan teklif{% else %}henüz teklif yok{% endif %}</span>
+        </a>
 
     </div>
 </div>
