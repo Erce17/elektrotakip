@@ -8,7 +8,7 @@ from openpyxl import Workbook
 AMB = r"(?:R\d+|M\d+|T\d+|Tambur|TAMBUR)"
 ROW = re.compile(
     r"^(?P<pre>.*?)"
-    r"(?P<kesit>\d[\d.,]*(?:\s*[x+/]\s*\d[\d.,]*)*)\s*[*†‡]?\s+"
+    r"(?P<kesit>\d[\d.,]*(?:\s*[xX+/]\s*\d[\d.,]*)*)\s*[*†‡]?\s+"
     r"(?P<fiyat>\d{1,3}(?:\.\d{3})+|\d+[.,]\d+|\d+)\s+"
     r"(?P<amb>" + AMB + r"(?:\s*-\s*" + AMB + r")*)\s*$"
 )
@@ -45,7 +45,7 @@ def isle(pdf_yolu):
                     satirlar.append({
                         "sayfa": sno, "sutun": sutun,
                         "urun": urun or "",
-                        "kesit": m.group("kesit").replace(" ", ""),
+                        "kesit": m.group("kesit").replace(" ", "").replace("X", "x"),
                         "fiyat": fiyat_cevir(m.group("fiyat")),
                         "fiyat_ham": m.group("fiyat"),
                         "birim": "TL/km",
