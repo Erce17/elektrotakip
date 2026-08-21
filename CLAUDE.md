@@ -24,6 +24,7 @@ app/
 ├── dependencies.py, csrf.py, templating.py
 ├── quote_engine.py   → teklif hesap motoru (saf, DB bilmez)
 ├── quote_service.py  → ORM ↔ motor köprüsü
+├── excel_import.py   → tedarikçi dosyası ayrıştırma (saf, DB bilmez)
 ├── models/    → user, customer, catalog (Category + Product), quote
 ├── routers/   → auth · catalog · customers   (teklif router'ı HENÜZ YOK)
 └── templates/ → base, home, login, register, catalog, customers, partials/
@@ -59,9 +60,15 @@ Amaç kodun temizlenmesi kadar Erce'nin kendi projesini tanıması.
 - **Teklifte fiyat ve kur dondurulur**, katalogla canlı bağ kurulmaz. Kablo fiyatı bakıra
   ve dolara endeksli, günlük oynuyor; bağ kurulsaydı geçmiş teklifler kendiliğinden
   bozulurdu. Aynı gerekçeyle varsayılan iskonto zincirleri de **kopyalanır, bağlanmaz.**
-- **Excel içe aktarma** (`catalog.py`) gerçek kullanıcı davranışından çıkmış: KM bazlı
-  fiyatı metreye çevirir, Türkçe `1.200,50` formatını parse eder, mükerreri atlar.
-  Dokunurken bu davranışları bozma.
+- **Tedarikçi dosyası ayrıştırma `excel_import.py`'da**, router'da değil. Başlık satırını
+  ve sütun adlarını kendisi tanır; sabit sütun sırası varsayma. Davranışların hepsi
+  `tests/fixtures/tedarikci_listeleri/` altındaki **11 gerçek dosyadan** ölçüldü ve
+  `test_supplier_files.py` ile sabitlendi. Ayrıştırmaya dokunacaksan önce o testleri koştur —
+  uydurma fixture'la doğrulanmış sayma. Korunması gereken davranışlar: KM bazlı fiyatı
+  metreye çevirme, Türkçe `1.200,50` ayrıştırma, mükerrer atlama, bölüm başlığını ürün
+  saymama, üç para birimini çözme.
+- **Sütun adı eşleştirmesi kelime bazlı olmalı, alt dize değil.** `"ad" in "ADET"` doğrudur
+  ama istenen şey değildir; bu hata bir dosyada 699 ürünü sessizce attırmıştı.
 
 ## Kurallar
 - Paket işlemleri `uv` ile (`pip` değil).

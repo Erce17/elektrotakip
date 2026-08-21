@@ -8,8 +8,9 @@
 
 ## Son oturum
 **Tarih:** 2026-08-21 (Thufir)
-**Yapılan:** PAKET B — **teklif motoru yazıldı.** Ekran yok, testli. Commit `de10755`.
-**Test:** 198 geçiyor (oturum başında 144).
+**Yapılan:** PAKET B (teklif motoru) **ve** PAKET A (içe aktarma) bitti.
+Commit `de10755`, `e96ac90`, `fac73ca`. `main` push edilmiş durumda.
+**Test:** 314 geçiyor (oturum başında 144).
 
 ### Ne kuruldu
 
@@ -64,29 +65,53 @@
 
 ---
 
+# PAKET A — içe aktarma (21.08, bitti)
+
+Eski akış "tedarikçi dosyası aktar" değil **"bizim şablonu doldur"**du: sabit sütun
+sırası (0,1,2,3,4), `workbook.active` ile tek sheet, openpyxl olduğu için `.xls` yok.
+
+**`app/excel_import.py`** — saf ayrıştırma katmanı, DB/ORM/HTTP bilmez. Router artık
+yalnızca kayıtları ürüne çeviriyor ve mükerrer/sahiplik kurallarını uyguluyor.
+
+| Sorun | Çözüm | Ölçüm |
+|---|---|---|
+| Başlık satırı sabit değil | Puanlayarak bulunuyor | 1. (6 dosya), 2. (Sezgin, Tense), 3. (Kael), 5. (Erse) satır |
+| Sütun adları çeşitli | Addan tanıma + kelime bazlı gevşek eşleşme | kod 7, fiyat 6 farklı isim |
+| Fiyat sütunu tarihle adlandırılıyor | Türkçe ay adı + yıl kalıbı | `2026 ŞUBAT`, `2024 KASIM LİSTE FİYATI` |
+| `.xls` açılamıyor | `xlrd` eklendi | Kael gerçek BIFF8 |
+| Tek sheet okunuyordu | Tüm sayfalar | Grup Arge 10, Molwex 2, Erse 2 |
+| Fiyatsız sayfa | Atlanıyor **ve adıyla raporlanıyor** | Molwex 'Tüm Kodlar' |
+| Bölüm başlıkları ürün sayılıyordu | Fiyat hücresi boşsa başlık | Kael, Sezgin, Tense, Grup Arge |
+| Para birimi | Üç yoldan çözülüyor | ayrı sütun · `TL/km` içinden · 'BİRİM' diye açılmış USD sütunu (Sezgin) |
+| Kimliksiz satır | Ürün sayılmıyor | Viko'da PDF çevrim artığı |
+
+**Sonuç: 11 dosyanın 11'i okunuyor, ~13.600 satır.** Mükerrer tespiti artık tedarikçi
+koduna dayanıyor (`Product.supplier_code`); kod yoksa eski kalıba (özellik + marka) düşüyor.
+Kategori seçimi: grup sütunu → sayfa adı → `Diğer`. `Sayfa1` gibi Excel'in kendi verdiği
+adlar elenir.
+
+### İki hata testlerle yakalandı — ikisi de sessiz veri kaybıydı
+1. **Alt dize eşleşmesi felaketti.** `'ADET'` içinde `"ad"`, `'Turuncu'` içinde `"urun"`,
+   `'KODLAMA MALZEMESİ'` içinde `"kod"` geçiyor. Molwex'te **699 ürün** başlık sanılıp
+   atılmıştı. Eşleşme kelime bazlı olunca düzeldi.
+2. **Ürün adı boş = bölüm başlığı sanmak.** Viko'da **822 satırın** adı boş ama fiyatı
+   geçerli. Ayırt edici ölçüt ad değil, fiyat hücresinin sayıya çevrilebilmesi.
+
+### Bilerek yapılmayanlar
+- **Kablo parametreli ayrıştırma yok** (kesit, damar sayısı, iletken). 3. hafta işi,
+  aşağıda duruyor.
+- **Marka sütunu gerçek dosyalarda yok.** Alan tanınıyor ama 11 dosyanın hiçbirinde
+  geçmiyor; ürünlerin `brand`'i boş kalıyor.
+- **İki seviyeli paketleme** (`Kutudaki Adet` + `Kolideki Adet`) okunuyor ama ürüne
+  yazılmıyor — modelde karşılığı yok.
+- **Ruff'ta 4 uyarı duruyor**, ikisi boş `pass` migration'da (T8, v2'ye kesildi).
+  Fixture'daki tek seferlik PDF script'leri `pyproject.toml`'da ruff'tan hariç tutuldu.
+
+---
+
 ## Sırada
 
-**1. PAKET A — içe aktarma gerçek dosyaları yesin.** (Motor bittiğine göre sıradaki bu.)
-
-Mevcut durum ölçüldü: `app/routers/catalog.py:288` sabit sütun sırası bekliyor
-(kategori, spec, marka, fiyat, birim = 0,1,2,3,4) · `workbook.active` ile tek sheet
-okuyor · openpyxl olduğu için `.xls` açamıyor. Yani bu "tedarikçi dosyası aktar" değil
-**"bizim şablonu doldur"** akışı.
-
-| İş | Tahmin |
-|---|---|
-| Başlık satırını bulma (1., 2., 5. satırda olabiliyor) + sütunu adından tanıma | 2-3 saat |
-| `.xls` desteği (xlrd) — Kael okunamıyor | 1 saat |
-| Çoklu sheet (Grup Arge 10, Molwex 2, Erse 2) | 1 saat |
-| 11 fixture ile test | 1-2 saat |
-| Para birimi sütununu tanıma → yeni `Product.currency` alanına yazma | 1 saat |
-
-Sütun adı çeşitliliği gerçek: kod sütunu **7 farklı isimle** (`STOK KODU`, `Referans`,
-`KOD NO`, `Malz. Kodu`, `ÜRÜN KODU`, `Sipariş Kodu`, `Stok Kodu`), fiyat sütunu
-**6 farklı isimle** (`2026 ŞUBAT`, `BİRİM FİYAT(t/m)`, `2024 KASIM LİSTE FİYATI`,
-`LİSTE FİYATI`, `Liste Fiyat`, `FİYAT`).
-
-**2. Teklif router + ekranı** (2. hafta işi): teklif oluşturma, kalem ekleme, zincir
+**1. Teklif router + ekranı** (2. hafta işi): teklif oluşturma, kalem ekleme, zincir
 düzenleme, yazdırılabilir HTML çıktı. Motor hazır, bağlanmayı bekliyor.
 
 **3. Kablo parametreli arama** (3. hafta): aşağıdaki "kablo parametreleri" bölümü.
@@ -114,14 +139,22 @@ yerine **eski bir teklif örneği istemek** — tek belge 7 sorunun beşini bird
 > 6. sorunun modele etkisi kapandı: versiyonlama zaten kuruldu.
 > 1-5 motoru değiştirmez, **varsayılanları** (`QuoteDefaults`) doldurur.
 
-### 🔑 Hâlâ açık tek kapsam sorusu: anahtar/priz
+### 🔑 Anahtar/priz — KARAR VERİLDİ (21.08)
 
 Viko listesi üç fiyat veriyor: `Mekanizma 472,00 + Düğme/Kapak 212,00 = Toplam 684,00`,
-çerçeve **ayrıca** fiyatlı. Erce'nin gözlemi doğruluyor: perakendede iç ve dış ayrı satılıyor.
+çerçeve **ayrıca** fiyatlı. Perakendede iç ve dış ayrı satılıyor.
 
-Teklifte tek satır mı ("120 adet priz"), üç satır mı? "Tek satır" ise motorda kalem içi
-bileşen kavramı gerekiyor. ⚠️ Mekanizma ve kapağın **iskonto grubu farklıysa** toplama
-erken yapılamaz. Model buna kapalı kurulmadı; karar gelince açılır.
+**Erce'nin kararı: şimdilik ayrı kalemler olarak kalsın. Sonrasında "set olarak ekle"
+seçeneği gelecek.**
+
+Motora yansıması: bugünkü davranış zaten bu — her bileşen kendi kalemi, kendi iskonto
+grubuyla. `QuoteItem.parent_item_id` alanı duruyor ve hesaba girmiyor;
+`test_bilesen_kalemi_ayri_satir_olarak_toplanmaz` bunu sabitliyor.
+
+"Set olarak ekle" geldiğinde yapılacak iş: ekranda bir set tanımı seçilince üç kalemi
+birden ekleyen bir giriş kolaylığı. Mekanizma ve kapağın iskonto grubu farklı
+olabildiği için **toplama yine erken yapılmayacak** — set bir giriş kolaylığı,
+hesap birimi değil.
 
 ---
 
@@ -206,7 +239,7 @@ kutup sayısı, IP sınıfı) — aynı yapı onlara da kurulsun mu, şimdilik s
 ---
 
 ## Test durumu
-`uv run pytest` → **198 test.** Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
+`uv run pytest` → **314 test.** Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
 
 | Dosya | Kapsam |
 |---|---|
@@ -215,7 +248,8 @@ kutup sayısı, IP sınıfı) — aynı yapı onlara da kurulsun mu, şimdilik s
 | `test_catalog_isolation.py` | Erişim kontrolü + IDOR |
 | `test_customers_isolation.py` | Müşteri izolasyonu |
 | `test_csrf.py` | CSRF |
-| `test_excel_import.py` | Mükerrer, bozuk girdi, boş satır |
+| `test_supplier_files.py` | 11 gerçek tedarikçi dosyası: ayrıştırma + uçtan uca içe aktarma (116) |
+| `test_excel_import.py` | Mükerrer, bozuk girdi, boş satır (kendi şablonumuz) |
 | `test_units.py` | KM dönüşümü, birim normalleştirme, kolon sınırı |
 | `test_parse_price.py` | Fiyat ayrıştırma ve Türkçe gösterim |
 | `test_home.py` | Ana panel sayıları, gezinme |
@@ -236,14 +270,25 @@ kutup sayısı, IP sınıfı) — aynı yapı onlara da kurulsun mu, şimdilik s
 | **Orantılı dağıtım** | Payları ayrı ayrı yuvarlarsan toplam hedeften sapar ve teklif toplamı kalemlerin toplamını tutmaz. Largest remainder ile aşağı yuvarlayıp artan kuruşları dağıtmak gerekiyor. | 21.08 |
 | **Autogenerate'e güvenme** | Dolu tabloya NOT NULL kolon eklerken `server_default` koymaz (migration patlar) ve yabancı anahtarlara index koymaz. `alembic check` sürüklenmeyi yakalıyor. | 21.08 |
 | **Şablon ≠ bağ** | Müşterinin varsayılan iskontosu teklife **kopyalanır.** Bağlansaydı varsayılan değişince geçmiş teklifler kendiliğinden bozulurdu — donmuş fiyat kararının aynısı. | 21.08 |
+| **Alt dize ≠ kelime** | Sütun adı tanırken `"ad" in "ADET"` doğrudur ama istenen şey değildir. Kısa anahtarlarla alt dize araması Molwex'te 699 yanlış pozitif verdi; kelime bazlı eşleşmede 0. Eşleştirme kelime sınırında yapılmalı. | 21.08 |
+| **Gerçek dosya = testin kendisi** | Ayrıştırıcıyı 11 gerçek dosyaya karşı koşturmak iki sessiz veri kaybını (Molwex 699, Viko 822 satır) anında gösterdi. Uydurma fixture ikisini de kaçırırdı: ikisi de "beklenmedik ama gerçek" veriden çıktı. | 21.08 |
+| **Sayaç, sessiz atlamadan iyidir** | Ayrıştırıcı kaç satırı neden atladığını sayıyor (bölüm başlığı, tekrar eden başlık, kimliksiz, fiyatı okunamayan). "Neden bu kadar az ürün geldi" sorusu ancak böyle cevaplanıyor — ve iki hatayı da bu sayaçlar ele verdi. | 21.08 |
 
 ---
 
 ## Vault özeti (Olric'e taşınacak)
-Elektrotakip'in teklif motoru yazıldı — ürünün satılan parçası artık var. Ekran yok,
-hesap katmanı testli: sıralı ve yeniden düzenlenebilir hesap zinciri, çarpımsal iskonto,
-satır bazında GİB uyumlu KDV yuvarlaması, kuruş kaybetmeyen orantılı iskonto dağıtımı,
-teklif anında dondurulan fiyat ve döviz kuru, revizyon versiyonlaması. Hesap katmanı
-veritabanından tamamen ayrı durduğu için 54 yeni test fixture'sız koşuyor; proje 198 teste
-çıktı. Anahtar/priz bileşen sorusu hâlâ açık, model buna kapalı kurulmadı. Sıradaki iş
-içe aktarmanın 11 gerçek tedarikçi dosyasını yiyebilmesi.
+Elektrotakip'te iki paket birden bitti. **Teklif motoru** yazıldı — ürünün satılan parçası
+artık var: sıralı ve yeniden düzenlenebilir hesap zinciri, çarpımsal iskonto, satır bazında
+GİB uyumlu KDV yuvarlaması, kuruş kaybetmeyen orantılı iskonto dağıtımı, teklif anında
+dondurulan fiyat ve döviz kuru, revizyon versiyonlaması. Hesap katmanı veritabanından
+tamamen ayrı durduğu için testleri fixture'sız koşuyor.
+
+**İçe aktarma** artık gerçek tedarikçi dosyalarını yiyor: başlık satırını ve sütun adlarını
+kendisi tanıyor, çoklu sayfa ve eski `.xls` okuyor, bölüm başlıklarını ürün sanmıyor, üç
+farklı para birimini çözüyor. 11 gerçek dosyanın 11'i okunuyor (~13.600 satır) ve dosyalar
+teste dahil edildi. Bu testler iki sessiz veri kaybını yakaladı: bir sütun adı eşleşmesi
+hatası Molwex'te 699, bir bölüm başlığı kuralı Viko'da 822 ürünü atıyordu.
+
+Proje 144 testten **314 teste** çıktı. Anahtar/priz bileşen sorusu karara bağlandı: şimdilik
+ayrı kalemler, ileride "set olarak ekle" kolaylığı. Sıradaki iş teklif ekranı — motor hazır,
+bağlanmayı bekliyor.
