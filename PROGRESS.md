@@ -8,9 +8,13 @@
 
 ## Son oturum
 **Tarih:** 2026-08-21 (Thufir)
-**Yapılan:** PAKET B (teklif motoru) **ve** PAKET A (içe aktarma) bitti.
-Commit `de10755`, `e96ac90`, `fac73ca`. `main` push edilmiş durumda.
-**Test:** 314 geçiyor (oturum başında 144).
+**Yapılan:** Üç paket birden: **teklif motoru**, **içe aktarma**, **teklif ekranı.**
+Commit `de10755` → `ea20ff3`. `main` push edilmiş, çalışan dizin temiz.
+**Test:** 381 geçiyor (oturum başında 144).
+
+> **Ağustos'un üç haftalık planı kapandı.** 08.08'de "1. hafta motor, 2. hafta ekran,
+> 3. hafta katalog" denmişti; motor ve ekran bitti, katalog tarafında içe aktarma
+> bitti. Kalan: kablo parametreli arama + güvenlik borcu + canlıya çıkış.
 
 ### Ne kuruldu
 
@@ -19,9 +23,17 @@ Commit `de10755`, `e96ac90`, `fac73ca`. `main` push edilmiş durumda.
 | `app/quote_engine.py` | Saf hesap katmanı. DB/ORM/HTTP bilmez, girdi-çıktı dataclass |
 | `app/quote_service.py` | ORM ↔ motor köprüsü. Hesap mantığı burada değil |
 | `app/models/quote.py` | `Quote` · `QuoteItem` · `QuoteAdjustment` · `QuoteDefaults` |
+| `app/excel_import.py` | Tedarikçi dosyası ayrıştırma. Saf, DB bilmez |
+| `app/routers/quotes.py` | Teklif ekranı. Route'ta tek bir çarpma yok |
 | `alembic/.../2bd390383d15` | Migration. Postgres'te upgrade→downgrade→upgrade doğrulandı |
-| `tests/test_quote_engine.py` | 36 test — iş kuralları |
-| `tests/test_quote_model.py` | 18 test — model, köprü, kısıtlar |
+
+| Test dosyası | Kapsam |
+|---|---|
+| `test_quote_engine.py` | 36 — iş kuralları, fixture'sız |
+| `test_quote_model.py` | 19 — model, köprü, kısıtlar |
+| `test_supplier_files.py` | 116 — 11 gerçek tedarikçi dosyası |
+| `test_quotes_router.py` | 37 — erişim kontrolü, kalem/zincir akışı |
+| `test_quotes_output.py` | 30 — çıktı, revizyon, varsayılanlar |
 
 ### Motorun tasarım kararları (bunlar artık kod)
 
@@ -109,17 +121,78 @@ adlar elenir.
 
 ---
 
+# TEKLİF EKRANI (21.08, bitti)
+
+**`app/routers/quotes.py`** — route'ta tek bir çarpma yok. Hesabın tamamı
+`quote_engine`'de kalıyor; ekran sadece giriş alıp motorun çıktısını gösteriyor.
+Kalıp `customers.py`'dan: koruma route imzasında, izolasyon her sorguda.
+
+| Ekran | İş |
+|---|---|
+| `/quotes` | Liste + teklif açma. Toplamlar motordan |
+| `/quotes/{id}` | Kalem ekleme (katalogdan/elle), zincir düzenleme, canlı toplam |
+| `/quotes/{id}/print` | Yazdırılabilir çıktı |
+| `/quotes/settings` | İşletme varsayılanları + varsayılan zincir şablonu |
+
+### Kararlar
+- **Teklif numarası otomatik** (`2026-001`), kullanıcı içinde tekil, revizyonlar aynı
+  numarayı paylaşıyor. Boşluk aranıyor — sayaç tutmaktan basit ve silinen numarayı
+  geri kazandırıyor.
+- **İskonto zinciri tek kutuya `20/10` yazımıyla giriliyor.** Sektörde böyle
+  konuşuluyor ("yirmi bölü on"); her kademe için ayrı kutu doldurmak yavaşlatırdı.
+- **Zincir sırası ekranda ↑↓ ile değiştirilebiliyor** ve her adımın tabanı + etkisi
+  satır satır gösteriliyor. "Bu rakam nereden çıktı" sorusu cevaplanabilmeli.
+- **Her mutasyon gövdenin tamamını yeniden çiziyor** (`partials/quote_body.html`).
+  Bir kalemin iskontosu teklifin toplamını da değiştiriyor; kısmi güncellemede biri
+  unutulunca ekranda yanlış rakam kalırdı.
+- **Motor çıktısı ↔ DB kalemi eşleştirmesi router'da açık** (`kalem_ciftleri`),
+  şablonda indeks sayılmıyor. `quote_service.hesaba_giren_kalemler` filtreyi tek
+  yerde tutuyor.
+- **Yazdırma çıktısı `base.html`'i genişletmiyor.** Gezinme kâğıda basılmamalı ve
+  Tailwind CDN'i yazdırma anında ağa bağlanıp çıktıyı stilsiz bastırabilir; stil
+  dosyanın içinde. **PDF kütüphanesi yok** — tarayıcının "PDF kaydet" akışı yeterli.
+- **Revizyon** aynı numarayı taşıyor, versiyonu artıyor, eskisi dokunulmadan duruyor.
+  Kalemler dondurulmuş fiyat ve kurla kopyalanıyor: revizyon "aynı işin yeni teklifi",
+  fiyat güncellemesi ayrı bir karar.
+- **`/quotes/settings` route'u `/{quote_id}`'den ÖNCE tanımlı.** FastAPI yolları tanım
+  sırasına göre eşleştiriyor; sonra olsaydı "settings" bir teklif id'si sanılırdı.
+
+### Yakalanan sessiz veri kaybı
+**`Quote.revisions` ilişkisinde `delete-orphan` cascade vardı.** 1. sürümü silmek 2. ve
+3. sürümü de götürüyordu — kullanıcı eskisini temizlerken en güncel teklifini
+kaybederdi. Cascade kaldırıldı: revizyon köksüz kalıyor (`parent_quote_id` NULL) ama
+silinmiyor. Revizyon ayrı bir tekliftir, alt kayıt değil.
+
+### Bilerek yapılmayanlar
+- **Ürün arama yok.** Katalogdan kalem eklerken ilk 500 ürün bir `select` içinde
+  listeleniyor. Klemsan tek başına 3.694 ürün veriyor — **bu ölçekte kullanılamaz.**
+  Kablo parametreli arama işiyle birlikte çözülmeli, sıradaki iş bu.
+- **Kur elle giriliyor.** Otomatik kur çekme yok; teklif anında dondurma çalışıyor.
+- **Teklif durumu (`status`) kullanılmıyor.** Alan var, ekranda yok — "gönderildi /
+  kabul edildi" takibi v1 kapsamında değil.
+- **Kalemin sırası değiştirilemiyor** (zincirin sırası değiştirilebiliyor).
+- **CSV/Excel dışa aktarım yok.** 08.08'de "entegrasyon kapısı" için istenmişti;
+  `supplier_code` taşınıyor ama dışa aktarım yazılmadı.
+
+---
+
 ## Sırada
 
-**1. Teklif router + ekranı** (2. hafta işi): teklif oluşturma, kalem ekleme, zincir
-düzenleme, yazdırılabilir HTML çıktı. Motor hazır, bağlanmayı bekliyor.
+**1. Ürün arama + kablo parametreli arama.** İkisi aynı iş: teklif ekranındaki ürün
+seçimi 3.694 ürünle kullanılamaz durumda ve aramanın işe yaraması için parametrelerin
+ayrıştırılması gerekiyor. Aşağıdaki "kablo parametreleri" bölümü.
 
-**3. Kablo parametreli arama** (3. hafta): aşağıdaki "kablo parametreleri" bölümü.
-
-**4. Güvenlik borcu — canlıya çıkmadan zorunlu:**
+**2. Güvenlik borcu — canlıya çıkmadan zorunlu:**
 - **G7** parola politikası + e-posta doğrulaması yok. Tek karakterlik parola kabul ediliyor.
 - **G6** `python-jose` bakımsız, bilinen CVE'leri var. `PyJWT`'ye geçiş küçük iş.
 - Canlıya çıkarken `SECRET_KEY` ve `COOKIE_SECURE=true` ortam değişkeni olarak verilmeli.
+
+**3. Canlıya çıkış (Eylül).** Railway trial bitmiş. T10 (Tailwind CDN'den çekiliyor,
+üretim için önerilmiyor) v2'ye kesilmişti ama yazdırma çıktısında zaten CDN
+kullanılmıyor; teklif ekranı CDN'e bağlı.
+
+**4. Gerçek kullanıcıyla ilk deneme.** Motor ve ekran hazır olduğuna göre akrabaya
+gösterilebilir hâle geldi. Aşağıdaki 5 soru bu denemede kendiliğinden cevaplanır.
 
 ---
 
@@ -236,19 +309,25 @@ istiyor; index'lenebilir ve okunur kalıyor.
 **Açık soru:** kablo dışı ürünlerde ayırt edici parametreler (anahtar/priz/sigortada amper,
 kutup sayısı, IP sınıfı) — aynı yapı onlara da kurulsun mu, şimdilik sadece kablo mu?
 
+⚠️ **Bu iş artık teklif ekranını da bloke ediyor:** kalem eklerken ürün seçimi 500 ürünle
+sınırlı bir `select`. Klemsan tek başına 3.694 ürün. Arama olmadan ekran gerçek katalogla
+kullanılamaz.
+
 ---
 
 ## Test durumu
-`uv run pytest` → **314 test.** Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
+`uv run pytest` → **381 test.** Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
 
 | Dosya | Kapsam |
 |---|---|
 | `test_quote_engine.py` | Hesap zinciri, KDV, yuvarlama, dağıtım, kur (36) |
-| `test_quote_model.py` | Model, ORM↔motor köprüsü, fiyat donması, kısıtlar (18) |
+| `test_quote_model.py` | Model, ORM↔motor köprüsü, fiyat donması, kısıtlar (19) |
+| `test_quotes_router.py` | Teklif ekranı: erişim kontrolü, kalem/zincir akışı (37) |
+| `test_quotes_output.py` | Yazdırma çıktısı, revizyon, işletme varsayılanları (30) |
+| `test_supplier_files.py` | 11 gerçek tedarikçi dosyası: ayrıştırma + uçtan uca içe aktarma (116) |
 | `test_catalog_isolation.py` | Erişim kontrolü + IDOR |
 | `test_customers_isolation.py` | Müşteri izolasyonu |
 | `test_csrf.py` | CSRF |
-| `test_supplier_files.py` | 11 gerçek tedarikçi dosyası: ayrıştırma + uçtan uca içe aktarma (116) |
 | `test_excel_import.py` | Mükerrer, bozuk girdi, boş satır (kendi şablonumuz) |
 | `test_units.py` | KM dönüşümü, birim normalleştirme, kolon sınırı |
 | `test_parse_price.py` | Fiyat ayrıştırma ve Türkçe gösterim |
@@ -273,22 +352,39 @@ kutup sayısı, IP sınıfı) — aynı yapı onlara da kurulsun mu, şimdilik s
 | **Alt dize ≠ kelime** | Sütun adı tanırken `"ad" in "ADET"` doğrudur ama istenen şey değildir. Kısa anahtarlarla alt dize araması Molwex'te 699 yanlış pozitif verdi; kelime bazlı eşleşmede 0. Eşleştirme kelime sınırında yapılmalı. | 21.08 |
 | **Gerçek dosya = testin kendisi** | Ayrıştırıcıyı 11 gerçek dosyaya karşı koşturmak iki sessiz veri kaybını (Molwex 699, Viko 822 satır) anında gösterdi. Uydurma fixture ikisini de kaçırırdı: ikisi de "beklenmedik ama gerçek" veriden çıktı. | 21.08 |
 | **Sayaç, sessiz atlamadan iyidir** | Ayrıştırıcı kaç satırı neden atladığını sayıyor (bölüm başlığı, tekrar eden başlık, kimliksiz, fiyatı okunamayan). "Neden bu kadar az ürün geldi" sorusu ancak böyle cevaplanıyor — ve iki hatayı da bu sayaçlar ele verdi. | 21.08 |
+| **Cascade bir iş kararıdır** | `delete-orphan` "bu kayıt onsuz anlamsız" demek. Revizyon öyle değil: ayrı bir tekliftir. Cascade konulunca 1. sürümü silmek en güncel teklifi götürüyordu. İlişki kurarken "silinince ne olmalı" sorusu ayrıca sorulmalı. | 21.08 |
+| **Şablonda indeks sayma** | Motorun çıktısıyla DB kayıtlarını indeks üzerinden eşleştirmek, iki listenin filtresi ayrıştığı gün sessizce kayar. Eşleştirme veriyi üreten yerde açıkça kurulmalı — şablon sadece göstermeli. | 21.08 |
+| **Yol sırası eşleştirmeyi belirler** | FastAPI yolları tanım sırasına göre eşleştiriyor. `/quotes/settings`, `/quotes/{quote_id}`'den sonra tanımlansaydı "settings" bir id sanılıp 422 dönerdi. Sabit yollar parametreli olanlardan önce gelmeli. | 21.08 |
 
 ---
 
 ## Vault özeti (Olric'e taşınacak)
-Elektrotakip'te iki paket birden bitti. **Teklif motoru** yazıldı — ürünün satılan parçası
-artık var: sıralı ve yeniden düzenlenebilir hesap zinciri, çarpımsal iskonto, satır bazında
-GİB uyumlu KDV yuvarlaması, kuruş kaybetmeyen orantılı iskonto dağıtımı, teklif anında
-dondurulan fiyat ve döviz kuru, revizyon versiyonlaması. Hesap katmanı veritabanından
-tamamen ayrı durduğu için testleri fixture'sız koşuyor.
+**Elektrotakip artık uçtan uca çalışıyor: tedarikçi Excel'i içeri, teklif dışarı.**
+Ağustos'un üç haftalık planı tek oturumda kapandı.
 
-**İçe aktarma** artık gerçek tedarikçi dosyalarını yiyor: başlık satırını ve sütun adlarını
-kendisi tanıyor, çoklu sayfa ve eski `.xls` okuyor, bölüm başlıklarını ürün sanmıyor, üç
-farklı para birimini çözüyor. 11 gerçek dosyanın 11'i okunuyor (~13.600 satır) ve dosyalar
-teste dahil edildi. Bu testler iki sessiz veri kaybını yakaladı: bir sütun adı eşleşmesi
-hatası Molwex'te 699, bir bölüm başlığı kuralı Viko'da 822 ürünü atıyordu.
+**Teklif motoru** — ürünün satılan parçası: sıralı ve yeniden düzenlenebilir hesap
+zinciri, çarpımsal iskonto, satır bazında GİB uyumlu KDV yuvarlaması, kuruş kaybetmeyen
+orantılı iskonto dağıtımı, teklif anında dondurulan fiyat ve döviz kuru, revizyon
+versiyonlaması. Hesap katmanı veritabanından tamamen ayrı durduğu için testleri
+fixture'sız koşuyor.
 
-Proje 144 testten **314 teste** çıktı. Anahtar/priz bileşen sorusu karara bağlandı: şimdilik
-ayrı kalemler, ileride "set olarak ekle" kolaylığı. Sıradaki iş teklif ekranı — motor hazır,
-bağlanmayı bekliyor.
+**İçe aktarma** gerçek tedarikçi dosyalarını yiyor: başlık satırını ve sütun adlarını
+kendisi tanıyor, çoklu sayfa ve eski `.xls` okuyor, bölüm başlıklarını ürün sanmıyor,
+üç farklı para birimini çözüyor. 11 gerçek dosyanın 11'i okunuyor (~13.600 satır).
+
+**Teklif ekranı** motoru kullanıcının önüne koydu: katalogdan veya elle kalem, "20/10"
+yazımıyla iskonto zinciri, sırası ↑↓ ile değiştirilebilen hesap zinciri, canlı toplam,
+yazdırılabilir çıktı, revizyon ve işletme varsayılanları. Ekranda tek bir hesap satırı
+yok — her rakam motordan geliyor.
+
+Testler bu oturumda **üç sessiz veri kaybı** yakaladı: bir sütun eşleşme hatası Molwex'te
+699, bir bölüm başlığı kuralı Viko'da 822 ürünü atıyordu; bir ORM cascade'i ise eski
+teklifi silerken en güncel revizyonu götürüyordu. Proje 144 testten **381 teste** çıktı.
+
+Anahtar/priz bileşen sorusu karara bağlandı: şimdilik ayrı kalemler, ileride "set olarak
+ekle" kolaylığı.
+
+**Sıradaki iş: ürün arama.** Teklif ekranında kalem eklerken ürün seçimi 500 ürünle
+sınırlı bir açılır liste; Klemsan tek başına 3.694 ürün veriyor. Bu çözülmeden gerçek
+katalogla demo yapılamaz. Ardından güvenlik borcu (parola politikası, `python-jose` →
+`PyJWT`) ve Eylül canlıya çıkış.

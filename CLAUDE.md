@@ -26,7 +26,7 @@ app/
 ├── quote_service.py  → ORM ↔ motor köprüsü
 ├── excel_import.py   → tedarikçi dosyası ayrıştırma (saf, DB bilmez)
 ├── models/    → user, customer, catalog (Category + Product), quote
-├── routers/   → auth · catalog · customers   (teklif router'ı HENÜZ YOK)
+├── routers/   → auth · catalog · customers · quotes
 └── templates/ → base, home, login, register, catalog, customers, partials/
 alembic/       → migration'lar
 ```
@@ -69,6 +69,15 @@ Amaç kodun temizlenmesi kadar Erce'nin kendi projesini tanıması.
   saymama, üç para birimini çözme.
 - **Sütun adı eşleştirmesi kelime bazlı olmalı, alt dize değil.** `"ad" in "ADET"` doğrudur
   ama istenen şey değildir; bu hata bir dosyada 699 ürünü sessizce attırmıştı.
+- **Şablonlar hesap yapmaz, indeks saymaz.** Motorun çıktısıyla DB kayıtları router'da
+  açıkça eşleştirilir (`kalem_ciftleri`, `zincir_ciftleri`); Jinja tarafında
+  `liste[loop.index0]` yazma — iki listenin filtresi ayrıştığı gün sessizce kayar.
+- **Sabit yollar parametreli yollardan önce tanımlanır.** FastAPI tanım sırasına göre
+  eşleştiriyor: `/quotes/settings`, `/quotes/{quote_id}`'den sonra gelseydi "settings"
+  bir id sanılırdı.
+- **İlişki kurarken "silinince ne olmalı" ayrıca sorulur.** `delete-orphan` "bu kayıt
+  onsuz anlamsız" demektir. Revizyon öyle değil — cascade konulduğunda eski sürümü
+  silmek en güncel teklifi götürüyordu.
 
 ## Kurallar
 - Paket işlemleri `uv` ile (`pip` değil).
