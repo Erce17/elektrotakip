@@ -70,7 +70,14 @@
                 Şablon İndir
             </a>
         </div>
-        <p class="text-xs text-slate-500 mb-4">Tedarikçinin fiyat listesini olduğu gibi yükleyebilirsin — başlık satırı ve sütun adları otomatik tanınır, çok sayfalı dosyaların tüm sayfaları okunur. <span class="text-slate-400">.xlsx ve .xls</span></p>
+        <p class="text-xs text-slate-500 mb-3">Tedarikçinin fiyat listesini olduğu gibi yükleyebilirsin — başlık satırı ve sütun adları otomatik tanınır, çok sayfalı dosyaların tüm sayfaları okunur. <span class="text-slate-400">.xlsx ve .xls</span></p>
+        <div class="text-xs text-slate-500 mb-4 bg-white/60 border border-blue-100 rounded-lg p-2.5">
+            <span class="font-semibold text-slate-600">Kendi şablonunu dolduruyorsan:</span>
+            <span class="font-mono">Kesit</span> sütununa <span class="font-mono">3x2.5</span> ya da
+            <span class="font-mono">16</span> yaz — kesiti açıklama metnine gömersen aranamaz hale gelir.
+            <span class="font-mono">Stok Kodu</span> mükerrer kontrolünde kullanılır,
+            <span class="font-mono">Para Birimi</span> boşsa TL varsayılır.
+        </div>
         
         <form action="/catalog/import-excel" method="POST" enctype="multipart/form-data" class="space-y-3">
             {% include 'partials/csrf_field.html' %}

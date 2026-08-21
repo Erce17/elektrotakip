@@ -216,6 +216,8 @@ TAM_ESLESMELER = {
     ),
     "fiyat": ("fiyat", "liste fiyat", "liste fiyati", "birim fiyat", "fiyati"),
     "para_birimi": ("para birimi", "doviz", "doviz cinsi", "currency"),
+    # Ürün bazlı KDV: karışık oranlı tek teklifte tek oran yanlış rakam verir.
+    "kdv": ("kdv", "kdv %", "kdv orani", "kdv oran", "vergi", "vat", "tax"),
 }
 
 # Türkçe ay adları: fiyat sütunu sık sık tarihle adlandırılıyor
@@ -273,7 +275,7 @@ def sutun_tipi(baslik) -> tuple[str, int] | None:
     # "urun", 'KODLAMA MALZEMESİ' içinde "kod" geçiyor. Molwex'te 699 ürün satırı
     # bu yüzden başlık sanılıp atılmıştı.
     kelimeler = k.split()
-    for alan in ("kod", "aciklama", "ad", "grup", "marka", "kesit", "paket", "birim"):
+    for alan in ("kod", "aciklama", "ad", "grup", "marka", "kesit", "kdv", "paket", "birim"):
         for aday in TAM_ESLESMELER[alan]:
             if _kelime_dizisi_var(kelimeler, aday.split()):
                 return (alan, ICERIK)
@@ -387,6 +389,7 @@ class SatirKaydi:
     grup: str = ""
     marka: str = ""
     kesit: str = ""        # dosyanın kendi kesit sütunu; metinden okunana tercih edilir
+    kdv: str = ""          # ürün bazlı KDV oranı; boşsa çağıran varsayılanı kullanır
     fiyat: Decimal | None = None   # None = hücre doluydu ama okunamadı
     para_birimi: str = ""
     birim: str = ""
@@ -535,6 +538,7 @@ def sayfayi_ayristir(sayfa_adi: str, satirlar: list[list]) -> tuple[SayfaOzeti, 
                 grup=_metin(satir, sutunlar.get("grup")),
                 marka=_metin(satir, sutunlar.get("marka")),
                 kesit=_metin(satir, sutunlar.get("kesit")),
+                kdv=_metin(satir, sutunlar.get("kdv")),
                 fiyat=fiyat,
                 para_birimi=para,
                 birim=birim,

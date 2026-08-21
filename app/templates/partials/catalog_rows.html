@@ -6,9 +6,23 @@
             {{ product.category.name if product.category else '-' }}
         </span>
     </td>
-    <td class="px-6 py-4 text-slate-500 text-sm">{{ product.technical_specs or '-' }}</td>
+    <td class="px-6 py-4 text-slate-500 text-sm">
+        {{ product.technical_specs or '-' }}
+        {# Aranabilir parametreler: kullanıcı içe aktarmanın ne çıkardığını görebilsin.
+           Boşsa ürün metinle bulunuyor, sorun değil. #}
+        {% if product.cross_section or product.conductor or product.insulation %}
+        <div class="text-xs text-slate-400 mt-0.5">
+            {% if product.cross_section %}{% if product.core_count %}{{ product.core_count }}x{% endif %}{{ product.cross_section | fiyat }} mm²{% endif %}
+            {% if product.conductor %}· {{ product.conductor }}{% endif %}
+            {% if product.insulation %}· {{ product.insulation }}{% endif %}
+        </div>
+        {% endif %}
+    </td>
     <td class="px-6 py-4 font-semibold text-slate-700 text-right whitespace-nowrap">
-        {{ product.unit_price | fiyat }} ₺ / {{ product.unit or 'Adet' }}
+        {# Para birimi ürün bazlı: Klemsan tamamen EURO, Grup Arge aynı dosyada
+           TL ve USD veriyor. Sabit ₺ yazmak yanlış rakam gösteriyordu. #}
+        {{ product.unit_price | fiyat }} {{ product.currency or 'TRY' }} / {{ product.unit or 'Adet' }}
+        <div class="text-xs font-normal text-slate-400">KDV %{{ product.vat_rate if product.vat_rate is not none else 20 }}</div>
     </td>
     <td class="px-6 py-4 text-center flex justify-center space-x-2">
         <button hx-get="/catalog/product/{{ product.id }}/edit" 

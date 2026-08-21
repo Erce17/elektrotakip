@@ -1,5 +1,5 @@
 import io
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from urllib.parse import urlencode
 
 import openpyxl
@@ -132,6 +132,33 @@ def parametre_etiketi(parametre) -> str:
     if parametre.core_count:
         return f"{parametre.core_count}x{kesit} mm²"
     return f"{kesit} mm²"
+
+
+def kdv_orani_coz(ham: str, varsayilan: int = 20) -> int:
+    """KDV sütunundaki değeri orana çevirir. Okunamazsa varsayılan.
+
+    '%20', '20', '20,0' hepsi 20. `Product.vat_rate` tam sayı: Türkiye'de KDV
+    oranları tam sayı (1 / 10 / 20). Teklif tarafındaki `QuoteItem.vat_rate`
+    Numeric — orası kaleme kopyalanan değeri tutuyor ve ileride kesirli oran
+    gerekirse orası hazır.
+
+    0 ile 1 arasındaki değer kesirli yazımdır: '0,20' yazan %20 kastediyor, %0
+    değil. Yüzle çarpılıyor — reddedip varsayılana düşmek '0,10' için sessizce
+    %20 yazardı. Tam '0' meşru: KDV'siz ürün var.
+
+    Oran 0-100 dışına çıkarsa girdi hatalıdır ve varsayılana düşülür: yanlış oran
+    teklifte yanlış rakam demek.
+    """
+    if not ham or not str(ham).strip():
+        return varsayilan
+    deger = parse_price(str(ham).replace("%", ""))
+    if deger is None:
+        return varsayilan
+    if 0 < deger < 1:
+        deger *= 100
+    if not (0 <= deger <= 100):
+        return varsayilan
+    return int(deger.to_integral_value(rounding=ROUND_HALF_UP))
 
 
 def fiyati_coz(kayit, is_km_price: bool) -> tuple[Decimal, str, bool]:
@@ -282,16 +309,39 @@ def reparse_parameters(
     )
 
 
+# İndirilebilir şablonun sütunları. İçe aktarma başlıkları addan tanıdığı için
+# sıra bağlayıcı değil; buradaki sıra yalnızca doldurması kolay olsun diye.
+#
+# ⚠️ Kesit, Stok Kodu, Para Birimi ve KDV sonradan eklendi. Şablon 5 sütunken
+# gerçek tedarikçi dosyasından daha zayıf girdiydi: ham dosyadan kesit çıkıyordu,
+# şablondan çıkmıyordu. Kesit serbest metne çıplak sayı olarak yazılınca
+# ayrıştırıcı onu okumuyor — ve okumaması doğru (`product_search.py`'daki gerekçe).
+# Kendi sütununda ise başlık bağlamı garanti ettiği için "4x25" yazımı güvenli.
+SABLON_SUTUNLARI = [
+    "Stok Kodu",
+    "Kategori",
+    "Teknik Özellik",
+    "Marka",
+    "Kesit",
+    "Birim Fiyat",
+    "Para Birimi",
+    "Birim",
+    "KDV %",
+]
+
+
 @router.get("/download-template")
 def download_excel_template(current_user: User = Depends(require_user)):
     """Kullanıcının veri gireceği standart Excel şablonunu dinamik olarak üretir ve indirir."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "ElektroTakip_Sablon"
+    ws.append(SABLON_SUTUNLARI)
 
-    # "Malzeme" başlığı çıkarıldı, tam olarak yazdığımız algoritmaya uygun 5 sütun:
-    headers = ["Kategori", "Teknik Özellik", "Marka", "Birim Fiyat", "Birim"]
-    ws.append(headers)
+    # Başlıkları biraz genişlet: kullanıcı dosyayı açtığında sütun adları kesik
+    # görünmesin, hangi alanın ne olduğu belli olsun.
+    for sutun, baslik in zip(ws.iter_cols(min_row=1, max_row=1), SABLON_SUTUNLARI):
+        ws.column_dimensions[sutun[0].column_letter].width = max(12, len(baslik) + 4)
 
     stream = io.BytesIO()
     wb.save(stream)
@@ -396,6 +446,7 @@ async def import_catalog_excel(
             technical_specs=spec,
             supplier_code=kayit.kod or None,
             unit_price=fiyat,
+            vat_rate=kdv_orani_coz(kayit.kdv),
             cross_section=parametre.cross_section,
             core_count=parametre.core_count,
             conductor=parametre.conductor,
