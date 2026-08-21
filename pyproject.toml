@@ -18,7 +18,13 @@ dependencies = [
     "python-multipart>=0.0.32",
     "sqlalchemy>=2.0.50",
     "uvicorn[standard]>=0.49.0",
+    "xlrd>=2.0.2",
 ]
+
+[tool.ruff]
+# Tek seferlik PDF→Excel çevirme script'leri. Ürüne girmiyorlar, her biri o PDF'in
+# sayfa düzenine özel; fixture'ın nasıl üretildiğini kayıtta tutmak için duruyorlar.
+exclude = ["tests/fixtures/**"]
 
 [tool.pytest.ini_options]
 # Testlerin `app` paketini görebilmesi için kök dizin sys.path'e eklenir

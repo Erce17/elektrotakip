@@ -1,5 +1,5 @@
 import io
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal
 from urllib.parse import urlencode
 
 import openpyxl
@@ -11,23 +11,29 @@ from app.database import get_db
 from app.templating import templates
 from app.dependencies import require_user
 from app.models import Category, Product, User
+# Fiyat/birim ayrıştırma ve dosya okuma saf katmanda; router yalnızca kullanır.
+# İsimler burada da bağlı kalıyor: mevcut testler `app.routers.catalog` üzerinden
+# içe aktarıyor ve bu modül onların doğal adresi.
+from app.excel_import import (  # noqa: F401
+    ADET_BAZLI_BIRIMLER,
+    BIRIM_KARSILIKLARI,
+    KM_METRE,
+    MAX_IMPORT_BYTES,
+    MAX_UNIT_PRICE,
+    PRICE_DECIMALS,
+    OkunamadiHatasi,
+    normalize_currency,
+    normalize_unit,
+    oku as excel_oku,
+    parse_price,
+    quantize_price,
+    sayfa_adi_kategori_olur_mu,
+)
 
 router = APIRouter(
     prefix="/catalog",
     tags=["Catalog"]
 )
-
-
-# Dosyanın tamamı belleğe okunuyor; fiyat listesi dosyaları küçük olur.
-MAX_IMPORT_BYTES = 5 * 1024 * 1024
-
-KM_METRE = Decimal(1000)
-
-# unit_price kolonu Numeric(12,4): 8 tam + 4 ondalık basamak.
-# Sınırı aşan değeri kaydetmeye çalışmak Postgres'te DataError'a, yani
-# içe aktarmanın tamamının çökmesine yol açıyor.
-PRICE_DECIMALS = Decimal("0.0001")
-MAX_UNIT_PRICE = Decimal("99999999.9999")
 
 
 # --- Yardımcılar ---------------------------------------------------------
@@ -53,103 +59,77 @@ def get_owned_category(db: Session, user: User, category_id: int) -> Category | 
     )
 
 
-def parse_price(value) -> Decimal | None:
-    """Fiyat girdisini Decimal'e çevirir. Anlaşılmazsa None.
-
-    Tedarikçi listeleri tek bir formatta gelmiyor; ayracın hangisi olduğuna
-    şu sırayla karar veriyoruz:
-
-    1. Hem nokta hem virgül varsa → SONDAKİ ondalık ayracıdır.
-       '1.200,50' → 1200.50   ·   '1,200.50' → 1200.50
-    2. Sadece virgül varsa → ondalık ayracı (Türkçe varsayılan).
-       '850,75' → 850.75
-    3. Sadece nokta varsa → belirsiz. Birden fazla nokta varsa ya da tek
-       noktadan sonra tam 3 hane varsa binlik ayracıdır:
-       '1.200' → 1200   ·   '1.234.567' → 1234567   ·   '1200.50' → 1200.50
-       Tek istisna: tam sayı kısmı 0 ise ondalıktır ('0.500' → 0.5).
-
-    Decimal kullanılıyor çünkü float ikili tabanda çalışır ve para değerinde
-    yuvarlama hatası biriktirir; DB kolonu da Numeric.
-    """
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float, Decimal)):
-        # Excel hücresi zaten sayı; float'ın ikili gösteriminden kaçınmak için
-        # metin üzerinden Decimal'e geçiyoruz
-        return Decimal(str(value))
-
-    raw = str(value).upper()
-    for gereksiz in ("TL", "TRY", "₺", "\xa0"):
-        raw = raw.replace(gereksiz, "")
-    raw = raw.replace(" ", "").strip()
-    if not raw:
-        return None
-
-    nokta, virgul = "." in raw, "," in raw
-    if nokta and virgul:
-        if raw.rfind(",") > raw.rfind("."):
-            raw = raw.replace(".", "").replace(",", ".")   # 1.200,50
-        else:
-            raw = raw.replace(",", "")                     # 1,200.50
-    elif virgul:
-        raw = raw.replace(",", ".")
-    elif nokta:
-        tam_kisim, _, son_grup = raw.rpartition(".")
-        binlik = raw.count(".") > 1 or (len(son_grup) == 3 and tam_kisim.strip("-") != "0")
-        if binlik:
-            raw = raw.replace(".", "")
-
-    try:
-        return Decimal(raw)
-    except InvalidOperation:
-        return None
-
-
-# Tedarikçilerin birim sütununa yazdıkları. Soldaki ham yazımlar, sağdaki
-# bizim kullandığımız karşılık. Listede olmayan bir yazım olduğu gibi kalır.
-BIRIM_KARSILIKLARI = {
-    "KM": "KM", "KM.": "KM", "K.M": "KM", "KMTL": "KM", "1000M": "KM",
-    "1000MT": "KM", "1000METRE": "KM", "KILOMETRE": "KM",
-    "M": "Metre", "MT": "Metre", "MT.": "Metre", "METRE": "Metre", "M.": "Metre",
-    "AD": "Adet", "AD.": "Adet", "ADET": "Adet", "ADT": "Adet",
-    "KUTU": "Kutu", "KT": "Kutu", "KT.": "Kutu", "BOX": "Kutu",
-    "PK": "Paket", "PKT": "Paket", "PAKET": "Paket", "TAKIM": "Takım", "TK": "Takım",
-    "KG": "Kg", "KG.": "Kg", "KILO": "Kg",
-    "ROLE": "Rulo", "RULO": "Rulo",
-}
-
-
-def quantize_price(value: Decimal) -> Decimal:
-    """Fiyatı kolonun tuttuğu basamak sayısına yuvarlar.
-
-    Yuvarlamayı DB'ye bırakmıyoruz: burada yapınca kaydedilen değerle ekranda
-    gösterilen değer aynı oluyor.
-    """
-    return value.quantize(PRICE_DECIMALS, rounding=ROUND_HALF_UP)
-
-
-# Uzunlukla değil sayıyla satılanlar: bunlar hiçbir koşulda 1000'e bölünmez
-ADET_BAZLI_BIRIMLER = {"Adet", "Kutu", "Paket", "Takım", "Kg", "Rulo"}
-
-
-def normalize_unit(raw: str) -> str:
-    """Tedarikçinin yazdığı birimi bizim kullandığımız yazıma çevirir.
-
-    'MT', 'mt.', 'metre' hepsi 'Metre' olur. Böylece aynı birim listede üç
-    farklı isimle görünmüyor ve KM tespiti güvenilir çalışıyor. Boş girdi boş
-    döner — "birim belirtilmemiş" ile "adet" birbirinden ayrılabilsin diye.
-    """
-    if not raw or not raw.strip():
-        return ""
-    anahtar = raw.upper().replace(" ", "").replace("/", "").strip()
-    return BIRIM_KARSILIKLARI.get(anahtar, raw.strip())
-
-
 def build_product_name(brand: str, technical_specs: str, category_name: str) -> str:
     """Ürün adını parçalardan derler: 'Marka Özellik Kategori'."""
     return " ".join(p for p in (brand, technical_specs, category_name) if p).strip()
+
+
+def kategori_adini_sec(kayit) -> str:
+    """Satırın hangi kategoriye gireceğine karar verir.
+
+    Sıra: grup sütunu → sayfa adı → 'Diğer'. Grup sütunu olmayan dosyalarda
+    (Öznur, Pofaco) sayfa adı tek anlamlı ipucu; ama 'Sayfa1' gibi Excel'in kendi
+    verdiği adlar bilgi taşımadığı için elenir.
+    """
+    if kayit.grup:
+        return kayit.grup
+    if sayfa_adi_kategori_olur_mu(kayit.sayfa):
+        return kayit.sayfa
+    return "Diğer"
+
+
+def urun_kimligi(category_id: int, kayit, spec: str) -> tuple:
+    """Mükerrer tespitinde kullanılacak kimlik.
+
+    Tedarikçi kodu varsa o kullanılır: aynı ürün listede iki farklı açıklamayla
+    geçebiliyor, kod ise tekil. Kod yoksa eski kalıba (özellik + marka) düşülür.
+    """
+    if kayit.kod:
+        return (category_id, "kod", kayit.kod)
+    return (category_id, spec, kayit.marka)
+
+
+def mevcut_urun_var_mi(db: Session, category_id: int, kayit, spec: str) -> bool:
+    """Ürün bu kategoride zaten kayıtlı mı. Kimlik kuralı `urun_kimligi` ile aynı."""
+    sorgu = db.query(Product).filter(Product.category_id == category_id)
+    if kayit.kod:
+        sorgu = sorgu.filter(Product.supplier_code == kayit.kod)
+    else:
+        sorgu = sorgu.filter(
+            Product.technical_specs == spec,
+            Product.brand == kayit.marka,
+        )
+    return sorgu.first() is not None
+
+
+def fiyati_coz(kayit, is_km_price: bool) -> tuple[Decimal, str, bool]:
+    """Satırın fiyatını ve birimini kaydedilecek hâle getirir.
+
+    `(fiyat, birim, sorunlu)` döner. `sorunlu` True ise fiyat 0 yazıldı ve
+    kullanıcının düzeltmesi gerekiyor — satır atılmıyor, ürün girsin.
+    """
+    fiyat = kayit.fiyat
+    birim = kayit.birim
+    if fiyat is None:
+        # 'Bilgi Alınız' (Tense), 'FİYAT SORUNUZ', 'KDV DAHİL NET FİYAT' (Grup Arge)
+        return Decimal(0), birim, True
+
+    # KM → metre dönüşümü satır bazlı: tedarikçi dosyalarında birimler karışık
+    # geliyor, tek kutucuk dosyanın tamamı için doğru olmuyor. Satır KM diyorsa
+    # her hâlükârda çevrilir (Öznur 'TL/km'). Kutucuk işaretliyse metre ve birimi
+    # belirtilmemiş satırlar da çevrilir; adet bazlı olanlara (kutu, paket,
+    # takım...) dokunulmaz — yanlış çevrimin asıl kaynağı buydu.
+    satir_km = birim == "KM" or (is_km_price and birim not in ADET_BAZLI_BIRIMLER)
+    if satir_km and fiyat > 0:
+        fiyat = fiyat / KM_METRE
+        birim = "Metre"
+
+    if fiyat > MAX_UNIT_PRICE:
+        # DB kolonunun sınırını aşıyor; kaydetmeye çalışırsak içe aktarmanın
+        # tamamı çöker. Ürünü al, fiyatı kullanıcı düzeltsin.
+        return Decimal(0), birim, True
+
+    return quantize_price(fiyat), birim, False
 
 
 def import_result_redirect(
@@ -157,13 +137,19 @@ def import_result_redirect(
     atlandi: int = 0,
     fiyatsiz: int = 0,
     hata: str = "",
+    atlanan_sayfalar: list[str] | None = None,
 ) -> RedirectResponse:
     """İçe aktarma sonucunu /catalog'a query string ile taşır.
 
     POST sonrası yönlendirme yapıldığı için sonuç bir sonraki istekte lazım;
     oturumda flash mesajı tutmak yerine URL'de taşımak yeterli.
+
+    Atlanan sayfa adları da taşınıyor: çok sayfalı dosyada bir sayfanın fiyat
+    sütunu yoksa (Molwex 'Tüm Kodlar') kullanıcı eksik ürünün sebebini görsün.
     """
     params = {"eklendi": eklendi, "atlandi": atlandi, "fiyatsiz": fiyatsiz}
+    if atlanan_sayfalar:
+        params["atlanan_sayfalar"] = ", ".join(atlanan_sayfalar)
     if hata:
         params = {"hata": hata}
     url = "/catalog?" + urlencode(params)
@@ -178,6 +164,7 @@ def get_catalog_page(
     eklendi: int = Query(0),
     atlandi: int = Query(0),
     fiyatsiz: int = Query(0),
+    atlanan_sayfalar: str = Query(""),
     hata: str = Query(""),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
@@ -196,7 +183,12 @@ def get_catalog_page(
     if hata:
         ic_aktarma = {"hata": hata}
     elif eklendi or atlandi or fiyatsiz:
-        ic_aktarma = {"eklendi": eklendi, "atlandi": atlandi, "fiyatsiz": fiyatsiz}
+        ic_aktarma = {
+            "eklendi": eklendi,
+            "atlandi": atlandi,
+            "fiyatsiz": fiyatsiz,
+            "atlanan_sayfalar": atlanan_sayfalar,
+        }
 
     return templates.TemplateResponse(
         request,
@@ -249,9 +241,14 @@ async def import_catalog_excel(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    """Excel fiyat listesini kataloğa aktarır. Sonucu özet olarak /catalog'a taşır."""
-    if not (file.filename or "").lower().endswith(".xlsx"):
-        return import_result_redirect(hata="Sadece .xlsx dosyası yükleyebilirsin.")
+    """Tedarikçi fiyat listesini kataloğa aktarır. Sonucu özet olarak /catalog'a taşır.
+
+    Dosyanın ayrıştırılması `app/excel_import.py`'da; burada yapılan iş kayıtları
+    ürüne çevirmek ve sahiplik/mükerrer kurallarını uygulamak.
+    """
+    dosya_adi = (file.filename or "").lower()
+    if not dosya_adi.endswith((".xlsx", ".xls")):
+        return import_result_redirect(hata="Sadece .xlsx veya .xls dosyası yükleyebilirsin.")
 
     contents = await file.read()
     if not contents:
@@ -262,17 +259,17 @@ async def import_catalog_excel(
         )
 
     try:
-        workbook = openpyxl.load_workbook(filename=io.BytesIO(contents), data_only=True)
-    except Exception:
-        # openpyxl bozuk/şifreli/eski format dosyalarda çok çeşitli hata atar;
-        # kullanıcı için hepsi aynı sonuca çıkıyor.
+        okunan = excel_oku(contents, dosya_adi)
+    except OkunamadiHatasi:
         return import_result_redirect(
-            hata="Dosya okunamadı. Şablonu indirip verilerini onun üzerine yazmayı dene."
+            hata="Dosya okunamadı. Bozuk, şifreli veya desteklenmeyen bir biçim olabilir."
         )
 
-    sheet = workbook.active
-    if sheet is None:
-        return import_result_redirect(hata="Dosyada okunabilir bir sayfa yok.")
+    if not okunan.sayfalar or all(s.baslik_satiri is None for s in okunan.sayfalar):
+        return import_result_redirect(
+            hata="Dosyada fiyat sütunu bulunamadı. Başlık satırında 'Fiyat' benzeri "
+                 "bir sütun olmalı."
+        )
 
     eklendi = 0
     atlandi = 0
@@ -280,83 +277,61 @@ async def import_catalog_excel(
     # Aynı dosya içindeki mükerrerleri yakalamak için: DB sorgusu henüz
     # commit edilmemiş satırları görmez.
     bu_dosyada_gorulen = set()
+    kategori_onbellegi: dict[str, Category] = {}
 
-    for row in sheet.iter_rows(min_row=2, values_only=True):
-        if not any(row):
-            continue
-
-        col_kat = str(row[0]).strip() if len(row) > 0 and row[0] is not None else "Diğer"
-        col_spec = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
-        col_marka = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
-        col_fiyat = row[3] if len(row) > 3 else None
-        col_birim = str(row[4]).strip() if len(row) > 4 and row[4] is not None else ""
-
-        fiyat = parse_price(col_fiyat)
-        if fiyat is None:
-            # Satırı atmıyoruz: ürün girsin, fiyatı sonra düzeltilsin. Ama sayısını say.
-            fiyat = Decimal(0)
-            fiyatsiz += 1
-
-        birim = normalize_unit(col_birim)
-
-        # KM → metre dönüşümü satır bazlı: tedarikçi dosyalarında birimler
-        # karışık geliyor, tek kutucuk dosyanın tamamı için doğru olmuyor.
-        # Satır KM diyorsa her hâlükârda çevrilir. Kutucuk işaretliyse metre
-        # ve birimi belirtilmemiş satırlar da çevrilir; adet bazlı olanlara
-        # (kutu, paket, takım...) dokunulmaz — yanlış çevrimin asıl kaynağı buydu.
-        satir_km = birim == "KM" or (is_km_price and birim not in ADET_BAZLI_BIRIMLER)
-        if satir_km and fiyat > 0:
-            fiyat = fiyat / KM_METRE
-            birim = "Metre"
-
-        if fiyat > MAX_UNIT_PRICE:
-            # DB kolonunun sınırını aşıyor; kaydetmeye çalışırsak içe aktarmanın
-            # tamamı çöker. Ürünü al, fiyatı kullanıcı düzeltsin.
-            fiyat = Decimal(0)
-            fiyatsiz += 1
-        else:
-            fiyat = quantize_price(fiyat)
+    for kayit in okunan.satirlar:
+        kategori_adi = kategori_adini_sec(kayit)
 
         # Kategori aramasında user_id şart: aynı isim başka kullanıcıda da olabilir
-        category = (
-            db.query(Category)
-            .filter(Category.name == col_kat, Category.user_id == current_user.id)
-            .first()
-        )
-        if not category:
-            category = Category(name=col_kat, user_id=current_user.id)
-            db.add(category)
-            db.flush()  # id lazım; commit dosyanın tamamı bitince
+        category = kategori_onbellegi.get(kategori_adi)
+        if category is None:
+            category = (
+                db.query(Category)
+                .filter(Category.name == kategori_adi, Category.user_id == current_user.id)
+                .first()
+            )
+            if not category:
+                category = Category(name=kategori_adi, user_id=current_user.id)
+                db.add(category)
+                db.flush()  # id lazım; commit dosyanın tamamı bitince
+            kategori_onbellegi[kategori_adi] = category
 
-        kimlik = (category.id, col_spec, col_marka)
+        spec = kayit.aciklama or kayit.ad
+        kimlik = urun_kimligi(category.id, kayit, spec)
         if kimlik in bu_dosyada_gorulen:
             atlandi += 1
             continue
-
-        existing_product = db.query(Product).filter(
-            Product.category_id == category.id,
-            Product.technical_specs == col_spec,
-            Product.brand == col_marka
-        ).first()
-
-        if existing_product:
+        if mevcut_urun_var_mi(db, category.id, kayit, spec):
             atlandi += 1
             continue
 
+        fiyat, birim, fiyat_sorunlu = fiyati_coz(kayit, is_km_price)
+        if fiyat_sorunlu:
+            fiyatsiz += 1
+
         db.add(Product(
-            name=build_product_name(col_marka, col_spec, col_kat),
-            brand=col_marka,
+            name=build_product_name(kayit.marka, spec or kayit.kod, kategori_adi),
+            brand=kayit.marka,
             category_id=category.id,
-            technical_specs=col_spec,
+            technical_specs=spec,
+            supplier_code=kayit.kod or None,
             unit_price=fiyat,
-            unit=birim or "Adet"
+            # Para birimi dosyada yoksa TL varsayılır: Klemsan tamamen EURO,
+            # Grup Arge aynı dosyada TL ve USD veriyor — sütun varsa ona uyulur.
+            currency=kayit.para_birimi or "TRY",
+            unit=birim or "Adet",
         ))
         bu_dosyada_gorulen.add(kimlik)
         eklendi += 1
 
     # Tek commit: dosya yarıda hata verirse katalog yarım kalmaz
     db.commit()
-    return import_result_redirect(eklendi=eklendi, atlandi=atlandi, fiyatsiz=fiyatsiz)
+    return import_result_redirect(
+        eklendi=eklendi,
+        atlandi=atlandi,
+        fiyatsiz=fiyatsiz,
+        atlanan_sayfalar=okunan.atlanan_sayfalar,
+    )
 
 
 @router.post("/product")
