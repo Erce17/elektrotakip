@@ -15,3 +15,7 @@ class User(Base):
 
     categories = relationship("Category", back_populates="owner", cascade="all, delete-orphan")
     customers = relationship("Customer", back_populates="owner", cascade="all, delete-orphan")
+    quotes = relationship("Quote", back_populates="owner", cascade="all, delete-orphan")
+    quote_defaults = relationship(
+        "QuoteDefaults", back_populates="owner", uselist=False, cascade="all, delete-orphan"
+    )

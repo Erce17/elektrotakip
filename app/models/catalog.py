@@ -31,6 +31,11 @@ class Product(Base):
     unit_price = Column(Numeric(12, 4), nullable=False)
     vat_rate = Column(Integer, default=20)
     unit = Column(String, default="Adet")
+    # Liste fiyatı TL olmak zorunda değil: Klemsan tamamen EURO, Grup Arge aynı
+    # dosyada TL ve USD veriyor. Teklife alınırken kur uygulanıp dondurulur.
+    currency = Column(String(3), default="TRY", nullable=False)
+    # Entegrasyon (Logo/Mikro/Netsis) sonradan gelirse baştan yazmamak için şimdi.
+    supplier_code = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     technical_specs = Column(String, nullable=True) 
 
