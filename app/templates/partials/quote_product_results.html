@@ -1,0 +1,87 @@
+{# Ürün arama sonuçları. Her satır doğrudan kalem ekleyen bir form.
+
+   Burası eskiden ilk 500 ürünü basan bir `select` idi. Klemsan tek başına 3.694 ürün
+   veriyor — o hâliyle gerçek katalogla kullanılamıyordu. #}
+<div id="urun-sonuclari">
+
+{% if not q.strip() %}
+<p class="text-xs text-slate-500">
+    Aramak için yaz. Sahada konuştuğun gibi yazabilirsin:
+    <span class="font-mono bg-white px-1 rounded">3x2.5 NYY</span>,
+    <span class="font-mono bg-white px-1 rounded">5x16 bakır</span>,
+    <span class="font-mono bg-white px-1 rounded">2.5-6 mm2</span>.
+</p>
+
+{% elif not urunler %}
+<p class="text-xs text-amber-700">
+    Sonuç yok.
+    {% if terim.parametreli_mi %}
+    Parametre filtresi uygulandı
+    ({% if terim.core_count %}{{ terim.core_count }} damar{% endif %}{% if terim.cross_section %}{% if terim.core_count %}, {% endif %}{{ terim.cross_section | fiyat }} mm²{% endif %}{% if terim.kesit_min %}{{ terim.kesit_min | fiyat }}–{{ terim.kesit_max | fiyat }} mm²{% endif %}{% if terim.conductor %}, {{ terim.conductor }}{% endif %}) —
+    kataloğunda bu parametreyle ürün olmayabilir ya da içe aktarmada kesit
+    ayrıştırılamamış olabilir.
+    {% endif %}
+</p>
+
+{% else %}
+{% if terim.parametreli_mi %}
+<p class="text-xs text-slate-500 mb-2">
+    Anlaşılan:
+    {% if terim.core_count %}<span class="bg-white px-1 rounded">{{ terim.core_count }} damar</span>{% endif %}
+    {% if terim.cross_section %}<span class="bg-white px-1 rounded">{{ terim.cross_section | fiyat }} mm²</span>{% endif %}
+    {% if terim.kesit_min %}<span class="bg-white px-1 rounded">{{ terim.kesit_min | fiyat }}–{{ terim.kesit_max | fiyat }} mm²</span>{% endif %}
+    {% if terim.conductor %}<span class="bg-white px-1 rounded">{{ terim.conductor }}</span>{% endif %}
+    {% if terim.insulation %}<span class="bg-white px-1 rounded">{{ terim.insulation }}</span>{% endif %}
+    {% if terim.metin %}<span class="text-slate-400">metin: “{{ terim.metin }}”</span>{% endif %}
+</p>
+{% endif %}
+
+<div class="space-y-1 max-h-96 overflow-y-auto">
+    {% for u in urunler %}
+    <form hx-post="/quotes/{{ quote.id }}/items" hx-target="#teklif-govde" hx-swap="outerHTML"
+          class="bg-white border border-slate-200 rounded-lg p-2 hover:border-blue-400 transition">
+        <input type="hidden" name="product_id" value="{{ u.id }}">
+        <div class="text-xs text-slate-800 leading-snug">{{ u.name[:90] }}</div>
+        <div class="text-xs text-slate-400 mb-1.5">
+            {% if u.core_count %}{{ u.core_count }}x{% endif %}{% if u.cross_section %}{{ u.cross_section | fiyat }} mm²{% endif %}
+            {% if u.conductor %}· {{ u.conductor }}{% endif %}
+            {% if u.insulation %}· {{ u.insulation }}{% endif %}
+            {% if u.supplier_code %}· <span class="font-mono">{{ u.supplier_code }}</span>{% endif %}
+            · <span class="text-slate-600">{{ u.unit_price | fiyat }} {{ u.currency }}/{{ u.unit }}</span>
+        </div>
+        <div class="flex items-end gap-1.5">
+            <label class="flex flex-col">
+                <span class="text-slate-400 text-xs">Miktar</span>
+                <input type="text" name="quantity" value="1"
+                       class="w-16 px-1.5 py-1 border border-slate-300 rounded text-xs">
+            </label>
+            <label class="flex flex-col">
+                <span class="text-slate-400 text-xs">İskonto</span>
+                <input type="text" name="discounts" placeholder="20/10"
+                       class="w-20 px-1.5 py-1 border border-slate-300 rounded text-xs">
+            </label>
+            {# Ürün teklifin para biriminde değilse kur zorunlu: fiyat teklife o kurla
+               donuyor. Aynı para birimindeyse kutu çıkmıyor, gereksiz alan olurdu. #}
+            {% if u.currency != quote.currency %}
+            <label class="flex flex-col">
+                <span class="text-amber-700 text-xs">Kur ({{ u.currency }})</span>
+                <input type="text" name="fx_rate" value="1" required
+                       class="w-16 px-1.5 py-1 border border-amber-400 rounded text-xs">
+            </label>
+            {% endif %}
+            <button type="submit" class="px-2.5 py-1 bg-blue-700 hover:bg-blue-800 text-white rounded text-xs">
+                Ekle
+            </button>
+        </div>
+    </form>
+    {% endfor %}
+</div>
+
+{% if urunler | length >= limit %}
+<p class="text-xs text-amber-700 mt-2">
+    İlk {{ limit }} sonuç gösteriliyor. Aramayı daralt — kesit veya damar sayısı ekle.
+</p>
+{% endif %}
+{% endif %}
+
+</div>

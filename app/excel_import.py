@@ -206,10 +206,13 @@ TAM_ESLESMELER = {
         "bolum", "malzeme turu", "kategori", "urun grubu", "ana urun grubu",
     ),
     "marka": ("marka", "brand", "uretici", "firma", "markasi"),
+    # Öznur kesiti ürün adında değil ayrı sütunda veriyor; ad 5 satırda birebir
+    # aynı olduğu için bu sütun okunmazsa ürünler ayırt edilemiyor.
+    "kesit": ("kesit", "kesit (mm2)", "kesit mm2", "kesit (mm²)", "cross section"),
     "birim": ("birim", "olcu birimi", "birimi", "unit"),
     "paket": (
         "paket adet", "kutu miktari", "packing pcs/bag", "kolideki adet",
-        "kutudaki adet", "paket", "koli adet",
+        "kutudaki adet", "paket", "koli adet", "ambalaj",
     ),
     "fiyat": ("fiyat", "liste fiyat", "liste fiyati", "birim fiyat", "fiyati"),
     "para_birimi": ("para birimi", "doviz", "doviz cinsi", "currency"),
@@ -270,7 +273,7 @@ def sutun_tipi(baslik) -> tuple[str, int] | None:
     # "urun", 'KODLAMA MALZEMESİ' içinde "kod" geçiyor. Molwex'te 699 ürün satırı
     # bu yüzden başlık sanılıp atılmıştı.
     kelimeler = k.split()
-    for alan in ("kod", "aciklama", "ad", "grup", "marka", "paket", "birim"):
+    for alan in ("kod", "aciklama", "ad", "grup", "marka", "kesit", "paket", "birim"):
         for aday in TAM_ESLESMELER[alan]:
             if _kelime_dizisi_var(kelimeler, aday.split()):
                 return (alan, ICERIK)
@@ -383,6 +386,7 @@ class SatirKaydi:
     aciklama: str = ""
     grup: str = ""
     marka: str = ""
+    kesit: str = ""        # dosyanın kendi kesit sütunu; metinden okunana tercih edilir
     fiyat: Decimal | None = None   # None = hücre doluydu ama okunamadı
     para_birimi: str = ""
     birim: str = ""
@@ -530,6 +534,7 @@ def sayfayi_ayristir(sayfa_adi: str, satirlar: list[list]) -> tuple[SayfaOzeti, 
                 aciklama=aciklama,
                 grup=_metin(satir, sutunlar.get("grup")),
                 marka=_metin(satir, sutunlar.get("marka")),
+                kesit=_metin(satir, sutunlar.get("kesit")),
                 fiyat=fiyat,
                 para_birimi=para,
                 birim=birim,

@@ -7,6 +7,17 @@
     <h1 class="text-3xl font-bold text-slate-800">Malzeme Kataloğu</h1>
 </div>
 
+{% if guncellendi is defined and guncellendi >= 0 %}
+<div class="mb-6 p-4 rounded-xl border border-blue-200 bg-blue-50 text-blue-900 text-sm">
+    {% if guncellendi %}
+    <span class="font-semibold">{{ guncellendi }} ürünün</span> kesit / damar / iletken
+    bilgisi yeniden çıkarıldı. Artık "3x2.5" gibi aramalarda bulunuyorlar.
+    {% else %}
+    Parametresi çıkarılabilecek yeni ürün bulunamadı.
+    {% endif %}
+</div>
+{% endif %}
+
 {% if ic_aktarma %}
     {% if ic_aktarma.hata %}
     <div class="mb-6 p-4 rounded-xl border border-red-200 bg-red-50 text-red-800 text-sm">
@@ -91,6 +102,16 @@
                     </div>
                 </label>
             </div>
+        </form>
+
+        <form action="/catalog/reparse-parameters" method="POST" class="mt-4 pt-4 border-t border-blue-200">
+            {% include 'partials/csrf_field.html' %}
+            <button type="submit" class="w-full text-xs text-slate-600 hover:text-slate-900 underline">
+                Mevcut ürünlerin kesit / damar bilgisini yeniden çıkar
+            </button>
+            <p class="text-xs text-slate-400 mt-1 text-center">
+                Parametre alanları eklenmeden önce aktarılmış ürünler için. Boş olanlara dokunur.
+            </p>
         </form>
     </div>
 

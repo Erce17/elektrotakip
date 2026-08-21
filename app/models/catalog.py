@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Numeric
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -37,7 +37,19 @@ class Product(Base):
     # Entegrasyon (Logo/Mikro/Netsis) sonradan gelirse baştan yazmamak için şimdi.
     supplier_code = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    technical_specs = Column(String, nullable=True) 
+    technical_specs = Column(String, nullable=True)
+
+    # --- Aranabilir parametreler ------------------------------------------
+    # `technical_specs` uzun bir metin; içindeki karar veren değerler ayrı kolona
+    # çıkarıldı. Ayrı kolon tercih edildi (EAV veya JSON değil): alanlar az sayıda,
+    # sayısal ve aralık sorgusu istiyor ("2.5-6 mm² arası"), index'lenebilir ve
+    # okunur kalıyor. Ayrıştırıcı `app/product_search.py`'da; çıkaramadığı alanlar
+    # NULL kalır ve ürün metinle bulunmaya devam eder.
+    cross_section = Column(Numeric(8, 3), nullable=True, index=True)   # mm²
+    core_count = Column(Integer, nullable=True, index=True)            # damar sayısı
+    conductor = Column(String, nullable=True)                          # bakır / alüminyum
+    insulation = Column(String, nullable=True)                         # PVC / XLPE / HFFR...
+    sheathed = Column(Boolean, nullable=True)                          # kılıflı mı
 
     # İlişkiler
     category = relationship("Category", back_populates="products")

@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from itertools import zip_longest
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from app import quote_service
 from app.database import get_db
 from app.dependencies import require_user
 from app.excel_import import normalize_currency, parse_price
+from app.product_search import arama_terimini_coz, urun_ara
 from app.models import (
     Category,
     Customer,
@@ -37,6 +38,10 @@ from app.templating import templates
 router = APIRouter(prefix="/quotes", tags=["quotes"])
 
 PARA_BIRIMLERI = ("TRY", "USD", "EUR")
+
+# Aramada gösterilecek azami sonuç. Kullanıcı listeyi gözle tarayacak; 3.694
+# ürünü basmak yardım değil. Sonuç kesilirse "daralt" uyarısı çıkıyor.
+ARAMA_LIMITI = 30
 
 # Zincire eklenebilecek adımlar. Ekranda seçenek olarak çıkıyor; motorun tanıdığı
 # türlerle birebir aynı olmalı.
@@ -181,6 +186,11 @@ def govde_yaniti(request: Request, db: Session, quote: Quote) -> HTMLResponse:
     )
 
 
+def kullanici_urunleri(db: Session, user_id: int):
+    """Ürünün sahibi kategorisi üzerinden belli olur; bu yüzden join gerekiyor."""
+    return db.query(Product).join(Category).filter(Category.user_id == user_id)
+
+
 def govde_baglami(db: Session, quote: Quote) -> dict:
     sonuc = quote_service.hesapla(quote)
 
@@ -200,14 +210,6 @@ def govde_baglami(db: Session, quote: Quote) -> dict:
         "zincir_ciftleri": zincir_ciftleri,
         "zincir_turleri": ZINCIR_TURLERI,
         "kalem_turleri": KALEM_TURLERI,
-        "urunler": (
-            db.query(Product)
-            .join(Category)
-            .filter(Category.user_id == quote.user_id)
-            .order_by(Product.name.asc())
-            .limit(500)
-            .all()
-        ),
     }
 
 
@@ -415,6 +417,9 @@ def get_quote_page(
         return HTMLResponse("Teklif bulunamadı.", status_code=404)
 
     baglam = govde_baglami(db, quote)
+    # Arama sonuçları bölümü boş başlıyor: sayfa açılırken ürün basmıyoruz. Eski
+    # açılır liste 500 ürün gönderiyordu ve gerçek katalogda işe yaramıyordu.
+    baglam.update(q="", urunler=[], terim=arama_terimini_coz(""), limit=ARAMA_LIMITI)
     baglam["customers"] = (
         db.query(Customer)
         .filter(Customer.user_id == current_user.id)
@@ -471,6 +476,41 @@ def delete_quote(
         db.delete(quote)
         db.commit()
     return RedirectResponse(url="/quotes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# --- Ürün arama ----------------------------------------------------------
+
+
+@router.get("/{quote_id}/product-search", response_class=HTMLResponse)
+def search_products_for_quote(
+    request: Request,
+    quote_id: int,
+    q: str = Query(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """Kalem eklemek için ürün arar.
+
+    Burası bir açılır listeydi ve ilk 500 ürünü basıyordu. Klemsan tek başına 3.694
+    ürün veriyor — o hâliyle gerçek katalogla kullanılamazdı. Arama sahada konuşulan
+    ifadeyi anlıyor: "3x2.5 NYY" → 3 damar, 2,5 mm², adı NYY'ye uyanlar.
+    """
+    quote = get_owned_quote(db, current_user, quote_id)
+    if quote is None:
+        return HTMLResponse("Teklif bulunamadı.", status_code=404)
+
+    terim = arama_terimini_coz(q)
+    urunler = (
+        urun_ara(kullanici_urunleri(db, current_user.id), Product, q, limit=ARAMA_LIMITI)
+        if q.strip()
+        else []
+    )
+    return templates.TemplateResponse(
+        request,
+        "partials/quote_product_results.html",
+        {"quote": quote, "urunler": urunler, "terim": terim, "q": q,
+         "limit": ARAMA_LIMITI},
+    )
 
 
 # --- Kalemler ------------------------------------------------------------

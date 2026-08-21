@@ -11,6 +11,7 @@ from app.database import get_db
 from app.templating import templates
 from app.dependencies import require_user
 from app.models import Category, Product, User
+from app.product_search import parametreleri_coz, urun_ara
 # Fiyat/birim ayrıştırma ve dosya okuma saf katmanda; router yalnızca kullanır.
 # İsimler burada da bağlı kalıyor: mevcut testler `app.routers.catalog` üzerinden
 # içe aktarıyor ve bu modül onların doğal adresi.
@@ -78,28 +79,59 @@ def kategori_adini_sec(kayit) -> str:
     return "Diğer"
 
 
-def urun_kimligi(category_id: int, kayit, spec: str) -> tuple:
+def urun_kimligi(category_id: int, kayit, spec: str, parametre) -> tuple:
     """Mükerrer tespitinde kullanılacak kimlik.
 
     Tedarikçi kodu varsa o kullanılır: aynı ürün listede iki farklı açıklamayla
-    geçebiliyor, kod ise tekil. Kod yoksa eski kalıba (özellik + marka) düşülür.
+    geçebiliyor, kod ise tekil.
+
+    Kod yoksa **parametreler kimliğe dahil edilmeli.** Öznur'un 1673 satırında kod
+    yok ve ürün adı 5 satırda birebir aynı; ürünleri ayıran şey kesit. Parametreler
+    kimliğe girmediğinde 1673 satırın 1614'ü mükerrer sanılıp atılıyordu — kablo
+    kataloğunun tamamı 59 ürüne iniyordu.
     """
     if kayit.kod:
         return (category_id, "kod", kayit.kod)
-    return (category_id, spec, kayit.marka)
+    return (
+        category_id,
+        spec,
+        kayit.marka,
+        parametre.cross_section,
+        parametre.core_count,
+    )
 
 
-def mevcut_urun_var_mi(db: Session, category_id: int, kayit, spec: str) -> bool:
+def mevcut_urun_var_mi(db: Session, category_id: int, kayit, spec: str, parametre) -> bool:
     """Ürün bu kategoride zaten kayıtlı mı. Kimlik kuralı `urun_kimligi` ile aynı."""
     sorgu = db.query(Product).filter(Product.category_id == category_id)
     if kayit.kod:
-        sorgu = sorgu.filter(Product.supplier_code == kayit.kod)
-    else:
-        sorgu = sorgu.filter(
+        return sorgu.filter(Product.supplier_code == kayit.kod).first() is not None
+    return (
+        sorgu.filter(
             Product.technical_specs == spec,
             Product.brand == kayit.marka,
-        )
-    return sorgu.first() is not None
+            Product.cross_section.is_(None) if parametre.cross_section is None
+            else Product.cross_section == parametre.cross_section,
+            Product.core_count.is_(None) if parametre.core_count is None
+            else Product.core_count == parametre.core_count,
+        ).first()
+        is not None
+    )
+
+
+def parametre_etiketi(parametre) -> str:
+    """Parametreleri ürün adına girecek kısa etikete çevirir: '3x2.5 mm²'.
+
+    Ürün adı `marka + özellik + kategori` olarak derleniyordu ve Öznur'da aynı ad
+    onlarca satırda tekrar ediyordu — liste okunmuyordu. Kesit adın içinde olunca
+    kullanıcı listeye bakıp ayırt edebiliyor.
+    """
+    if parametre.cross_section is None:
+        return ""
+    kesit = format(parametre.cross_section.normalize(), "f")
+    if parametre.core_count:
+        return f"{parametre.core_count}x{kesit} mm²"
+    return f"{kesit} mm²"
 
 
 def fiyati_coz(kayit, is_km_price: bool) -> tuple[Decimal, str, bool]:
@@ -165,6 +197,7 @@ def get_catalog_page(
     atlandi: int = Query(0),
     fiyatsiz: int = Query(0),
     atlanan_sayfalar: str = Query(""),
+    guncellendi: int = Query(-1),
     hata: str = Query(""),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
@@ -193,7 +226,12 @@ def get_catalog_page(
     return templates.TemplateResponse(
         request,
         "catalog.html",
-        {"categories": categories, "products": products, "ic_aktarma": ic_aktarma}
+        {
+            "categories": categories,
+            "products": products,
+            "ic_aktarma": ic_aktarma,
+            "guncellendi": guncellendi,
+        },
     )
 
 
@@ -210,6 +248,38 @@ def create_category(
 
     # HTMX ile eklendiğinde aynı sayfaya geri dönüp yenilenmiş halini göstersin
     return RedirectResponse(url="/catalog", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/reparse-parameters")
+def reparse_parameters(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """Mevcut ürünlerin aranabilir parametrelerini yeniden çıkarır.
+
+    Parametreler içe aktarma sırasında çıkarılıyor. Bu route, parametre alanları
+    eklenmeden ÖNCE içe aktarılmış katalogları kurtarmak için var — onlar olmadan
+    o ürünler kesitle aranamıyor. Ayrıştırıcı geliştiğinde de yeniden koşturulabilir.
+
+    Elle girilmiş değeri ezmemek için yalnızca parametresi boş olan ürünlere dokunur.
+    """
+    guncellendi = 0
+    for urun in user_products(db, current_user).filter(Product.cross_section.is_(None)):
+        parametre = parametreleri_coz(urun.name, urun.technical_specs or "")
+        if parametre.bos_mu:
+            continue
+        urun.cross_section = parametre.cross_section
+        urun.core_count = parametre.core_count
+        urun.conductor = parametre.conductor
+        urun.insulation = parametre.insulation
+        urun.sheathed = parametre.sheathed
+        guncellendi += 1
+    db.commit()
+
+    return RedirectResponse(
+        url="/catalog?" + urlencode({"guncellendi": guncellendi}),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.get("/download-template")
@@ -297,11 +367,17 @@ async def import_catalog_excel(
             kategori_onbellegi[kategori_adi] = category
 
         spec = kayit.aciklama or kayit.ad
-        kimlik = urun_kimligi(category.id, kayit, spec)
+
+        # Aranabilir parametreler içe aktarma sırasında çıkarılıyor: ürün ne zaman
+        # girdiyse o zaman aranabilir olmalı. Çıkarılamayanlar NULL kalır ve ürün
+        # metinle bulunmaya devam eder. Mükerrer kimliği de bunlara bakıyor.
+        parametre = parametreleri_coz(kayit.ad, kayit.aciklama, kesit_metni=kayit.kesit)
+
+        kimlik = urun_kimligi(category.id, kayit, spec, parametre)
         if kimlik in bu_dosyada_gorulen:
             atlandi += 1
             continue
-        if mevcut_urun_var_mi(db, category.id, kayit, spec):
+        if mevcut_urun_var_mi(db, category.id, kayit, spec, parametre):
             atlandi += 1
             continue
 
@@ -310,12 +386,21 @@ async def import_catalog_excel(
             fiyatsiz += 1
 
         db.add(Product(
-            name=build_product_name(kayit.marka, spec or kayit.kod, kategori_adi),
+            name=build_product_name(
+                kayit.marka,
+                " ".join(p for p in (spec or kayit.kod, parametre_etiketi(parametre)) if p),
+                kategori_adi,
+            ),
             brand=kayit.marka,
             category_id=category.id,
             technical_specs=spec,
             supplier_code=kayit.kod or None,
             unit_price=fiyat,
+            cross_section=parametre.cross_section,
+            core_count=parametre.core_count,
+            conductor=parametre.conductor,
+            insulation=parametre.insulation,
+            sheathed=parametre.sheathed,
             # Para birimi dosyada yoksa TL varsayılır: Klemsan tamamen EURO,
             # Grup Arge aynı dosyada TL ve USD veriyor — sütun varsa ona uyulur.
             currency=kayit.para_birimi or "TRY",
@@ -355,6 +440,7 @@ def create_product(
     if fiyat is None or fiyat < 0 or fiyat > MAX_UNIT_PRICE:
         return HTMLResponse("Birim fiyat okunamadı.", status_code=400)
 
+    parametre = parametreleri_coz(technical_specs, brand)
     new_product = Product(
         name=build_product_name(brand, technical_specs, category.name),
         technical_specs=technical_specs,
@@ -362,7 +448,12 @@ def create_product(
         category_id=category.id,
         unit_price=quantize_price(fiyat),
         vat_rate=vat_rate,
-        unit=normalize_unit(unit) or "Adet"
+        unit=normalize_unit(unit) or "Adet",
+        cross_section=parametre.cross_section,
+        core_count=parametre.core_count,
+        conductor=parametre.conductor,
+        insulation=parametre.insulation,
+        sheathed=parametre.sheathed,
     )
     db.add(new_product)
     db.commit()
@@ -377,17 +468,14 @@ def search_catalog(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    """HTMX ile canlı malzeme araması yapar."""
+    """HTMX ile canlı malzeme araması yapar.
+
+    Sahada konuşulan ifadeyi anlıyor: "3x2.5 NYY" → 3 damar + 2,5 mm² + adı NYY'ye
+    uyanlar. Ayrıştırma `app/product_search.py`'da; buradaki tek iş sahiplik
+    filtresini koymak.
+    """
     query = user_products(db, current_user)
-    if q:
-        # İsim, marka veya teknik özellikte arama yap (büyük/küçük harf duyarsız)
-        search_term = f"%{q}%"
-        query = query.filter(
-            (Product.name.ilike(search_term)) |
-            (Product.brand.ilike(search_term)) |
-            (Product.technical_specs.ilike(search_term))
-        )
-    products = query.all()
+    products = urun_ara(query, Product, q, limit=200) if q else query.limit(200).all()
 
     # Sadece tablo satırlarını (tbody içeriğini) render edip döndürüyoruz
     return templates.TemplateResponse(

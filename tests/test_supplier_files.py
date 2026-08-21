@@ -299,9 +299,30 @@ def test_turkce_buyuk_i_harfi_eslesir():
 
 
 def test_taninmayan_baslik_none_doner():
-    assert sutun_tipi("Kesit (mm2)") is None
+    assert sutun_tipi("Ham Satir") is None
+    assert sutun_tipi("Sütun1") is None
     assert sutun_tipi("") is None
     assert sutun_tipi(None) is None
+
+
+def test_kesit_sutunu_taninir():
+    """Öznur kesiti ürün adında değil ayrı sütunda veriyor.
+
+    Ad 5 satırda birebir aynı ('H07V-U (NYA) 450/750 V'); bu sütun okunmazsa
+    ürünler ayırt edilemiyor ve kesitle arama yapılamıyor.
+    """
+    assert sutun_tipi("Kesit (mm2)")[0] == "kesit"
+
+    sonuc = dosya_oku("Oznur_Kablo_Haziran_2026_PDFten.xlsx")
+    assert "kesit" in sonuc.sayfalar[0].sutunlar
+    assert all(k.kesit for k in sonuc.satirlar)
+
+
+def test_ambalaj_sutunu_paket_olarak_taninir():
+    """Öznur 'R100' / 'M1000' yazıyor: M1000 = 1000 m makara."""
+    assert sutun_tipi("Ambalaj")[0] == "paket"
+    sonuc = dosya_oku("Oznur_Kablo_Haziran_2026_PDFten.xlsx")
+    assert any(k.paket for k in sonuc.satirlar)
 
 
 def test_fiyat_sutunu_yoksa_baslik_bulunmaz():

@@ -99,41 +99,18 @@
         </div>
 
         <div class="bg-blue-50 p-6 rounded-xl border border-blue-200">
-            <h2 class="text-lg font-semibold text-slate-700 mb-4">Katalogdan Kalem Ekle</h2>
-            <form hx-post="/quotes/{{ quote.id }}/items" hx-target="#teklif-govde" hx-swap="outerHTML"
-                  class="space-y-3">
-                <div>
-                    <label class="block text-xs font-medium text-slate-600 mb-1">Malzeme</label>
-                    <select name="product_id" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
-                        <option value="">— seç —</option>
-                        {% for u in urunler %}
-                        <option value="{{ u.id }}">{{ u.name[:70] }} · {{ u.unit_price | fiyat }} {{ u.currency }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-medium text-slate-600 mb-1">Miktar</label>
-                        <input type="text" name="quantity" value="1" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-slate-600 mb-1">Kur</label>
-                        <input type="text" name="fx_rate" value="1" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-slate-600 mb-1">İskonto zinciri</label>
-                    <input type="text" name="discounts" placeholder="20/10"
-                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
-                    <p class="text-xs text-slate-400 mt-1">%20 sonra %10 → %28 iner, %30 değil.</p>
-                </div>
-                <button type="submit" class="w-full bg-blue-700 hover:bg-blue-800 text-white font-medium py-2 rounded-lg text-sm transition">
-                    Kalemi Ekle
-                </button>
-            </form>
-            <p class="text-xs text-slate-500 mt-3">
-                Ürün başka para biriminde ise kuru buraya yaz — teklife o kurla donar.
+            <h2 class="text-lg font-semibold text-slate-700 mb-1">Katalogdan Kalem Ekle</h2>
+            <p class="text-xs text-slate-500 mb-3">
+                Sahada konuştuğun gibi ara: <span class="font-mono">3x2.5 NYY</span>.
+                İskonto zincirini <span class="font-mono">20/10</span> yazarsan
+                %20 sonra %10 uygulanır — %28 iner, %30 değil.
             </p>
+            <input type="search" name="q" placeholder="3x2.5 NYY"
+                   hx-get="/quotes/{{ quote.id }}/product-search"
+                   hx-target="#urun-sonuclari" hx-swap="outerHTML"
+                   hx-trigger="keyup changed delay:300ms, search"
+                   class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm mb-3">
+            {% include 'partials/quote_product_results.html' %}
         </div>
 
         <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
