@@ -85,6 +85,10 @@ Amaç kodun temizlenmesi kadar Erce'nin kendi projesini tanıması.
 - **Ayrıştırma kalıbı bağlamı bilmeli.** Aynı `NxM` kalıbı serbest metinde çöp
   (Viko'da ürün kodu, Klemsan'da kontak değeri), `Kesit (mm2)` sütununda güvenilir.
   Her yere aynı regex'i uygulama; verinin nereden geldiğine bak.
+- **Kendi şablonumuz en zengin girdi biçimi olmalı, en fakiri değil.** Sütunları
+  `SABLON_SUTUNLARI`'nda; içe aktarma yeni bir alan öğrenirse şablon da öğrenmeli,
+  yoksa kullanıcı kendi aracıyla veri kaybediyor. Bir test ikisinin ayrışmadığını
+  sabitliyor (`test_sablonun_kendi_basliklari_taninir`).
 
 ## Kurallar
 - Paket işlemleri `uv` ile (`pip` değil).

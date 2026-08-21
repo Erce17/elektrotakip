@@ -7,10 +7,12 @@
 ---
 
 ## Son oturum
-**Tarih:** 2026-08-21 (Thufir)
-**Yapılan:** Dört iş: **teklif motoru**, **içe aktarma**, **teklif ekranı**, **ürün arama.**
-Commit `de10755` → `56fab72`. `main` push edilmiş, çalışan dizin temiz.
-**Test:** 463 geçiyor (oturum başında 144).
+**Tarih:** 2026-08-21/22 (Thufir)
+**Yapılan:** Beş iş: **teklif motoru**, **içe aktarma**, **teklif ekranı**, **ürün arama**,
+**şablon güçlendirme.** Commit `de10755` → `3276966`.
+**Test:** 498 geçiyor (oturum başında 144).
+
+> ⚠️ **Push edilmedi** — `3276966` ve `9baabad` yerelde bekliyor.
 
 > **Ağustos'un üç haftalık planı kapandı.** 08.08'de "1. hafta motor, 2. hafta ekran,
 > 3. hafta katalog + kablo parametreli arama" denmişti; dördü de bitti.
@@ -37,6 +39,7 @@ Commit `de10755` → `56fab72`. `main` push edilmiş, çalışan dizin temiz.
 | `test_quotes_router.py` | 37 — erişim kontrolü, kalem/zincir akışı |
 | `test_quotes_output.py` | 31 — çıktı, revizyon, varsayılanlar |
 | `test_product_search.py` | 80 — parametre ayrıştırma, yanlış pozitifler, arama |
+| `test_template_import.py` | 35 — şablon, şablonla içe aktarma, KDV |
 
 ### Motorun tasarım kararları (bunlar artık kod)
 
@@ -114,6 +117,7 @@ adlar elenir.
 
 ### Bilerek yapılmayanlar
 - ~~Kablo parametreli ayrıştırma yok~~ → ✅ aynı oturumda yapıldı, aşağıya bak.
+- ~~Şablon 5 sütun, ham dosyadan zayıf~~ → ✅ 22.08'de düzeltildi, aşağıya bak.
 - **Marka sütunu gerçek dosyalarda yok.** Alan tanınıyor ama 11 dosyanın hiçbirinde
   geçmiyor; ürünlerin `brand`'i boş kalıyor.
 - **İki seviyeli paketleme** (`Kutudaki Adet` + `Kolideki Adet`) okunuyor ama ürüne
@@ -238,6 +242,42 @@ değeri ezmez.
   aramasında çıkmaz. `section_min`/`section_max` kolonları gerekirdi; v1 kapsamında
   değil — kullanıcının ihtiyacı kablo, pabuç aralığı değil.
 - **Kablo dışı parametreler yok** (amper, kutup sayısı, IP sınıfı). Aşağıdaki açık soru.
+
+---
+
+# ŞABLON GÜÇLENDİRME (22.08, bitti)
+
+**Bulgu:** Kendi indirilebilir şablonumuz gerçek tedarikçi dosyasından **daha zayıf**
+girdiydi. Ham dosyadan kesit, tedarikçi kodu ve para birimi çıkıyordu; 5 sütunluk
+şablondan (Kategori · Teknik Özellik · Marka · Birim Fiyat · Birim) hiçbiri çıkmıyordu.
+
+Erce 21.08 gecesi tedarikçi dosyalarını bu şablon biçimine çevirmiş
+(`oznur_sablon.xlsx`, `viko_tl_sablon.xlsx`) — kategori ve marka ham dosyadan daha
+temiz gelmiş, **ama kesit açıklama metnine çıplak sayı olarak gömülmüş:**
+`'H07V-U (NYA) 450/750 V (CPR Class: Eca) 2.5'`. Ölçüldü: **1673 kablonun hiçbiri
+kesitle aranamıyordu.**
+
+**Çözüm parser'ı gevşetmek değildi.** Serbest metinde çıplak sayıyı kesit saymak
+Viko'da 532, Klemsan'da 496 satırı kablo yapardı. Kesit kendi sütununda olunca başlık
+bağlamı garanti ediyor ve `4x25` yazımı güvenli oluyor.
+
+**Şablona dört sütun eklendi:** `Stok Kodu` · `Kesit` · `Para Birimi` · `KDV %`.
+Bir test şablonu üreten yer ile okuyan yerin ayrışmadığını sabitliyor.
+
+### Yan işler
+- **İçe aktarma KDV'yi okuyor** — T6'nın yarısı kapandı. `%20`, `20`, `0,20` hepsi 20;
+  0 ile 1 arası değer kesirli yazım sayılıp yüzle çarpılıyor. Reddetmek `0,10` için
+  sessizce %20 yazardı, yani yanlış rakam. Tam `0` meşru (KDV'siz ürün var).
+- **Katalog listesi sabit `₺` yazıyordu.** Para birimi artık ürün bazlı — Klemsan
+  tamamen EURO veriyor, liste yanlış birim gösteriyordu. Kesit, iletken, yalıtım ve
+  KDV de listede görünüyor: kullanıcı içe aktarmanın ne çıkardığını görebilmeli.
+- **Öznur PDF çevrimi** (Erce'nin düzeltmesi): kesit bazen `4X25` diye büyük harfle
+  geçiyordu, regex yalnızca küçük `x` kabul ediyordu.
+
+### Açık
+`tests/fixtures/.../oznur_sablon.xlsx` ve `viko_tl_sablon.xlsx` **eski 5 sütunlu
+biçimde ve git'e eklenmedi.** Yeni şablonla yeniden üretilirlerse kesitleri de girer;
+ham dosyalar zaten çalıştığı için zorunlu değil. Karar Erce'de.
 
 ---
 
@@ -388,7 +428,7 @@ ihtiyaç çıkarsa eklenir. Yapı aynı kalıpla genişliyor: ölç, ayrı kolon
 ---
 
 ## Test durumu
-`uv run pytest` → **463 test.** Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
+`uv run pytest` → **498 test.** Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
 
 | Dosya | Kapsam |
 |---|---|
@@ -397,6 +437,7 @@ ihtiyaç çıkarsa eklenir. Yapı aynı kalıpla genişliyor: ölç, ayrı kolon
 | `test_quotes_router.py` | Teklif ekranı: erişim kontrolü, kalem/zincir akışı (37) |
 | `test_quotes_output.py` | Yazdırma çıktısı, revizyon, işletme varsayılanları (31) |
 | `test_product_search.py` | Parametre ayrıştırma, yanlış pozitifler, arama, yeniden ayrıştırma (80) |
+| `test_template_import.py` | Şablonun kendisi, şablonla içe aktarma, KDV, katalog listesi (35) |
 | `test_supplier_files.py` | 11 gerçek tedarikçi dosyası: ayrıştırma + uçtan uca içe aktarma (116) |
 | `test_catalog_isolation.py` | Erişim kontrolü + IDOR |
 | `test_customers_isolation.py` | Müşteri izolasyonu |
@@ -464,6 +505,11 @@ arayüzden görünmüyordu; hepsini gerçek dosyalarla ölçüm ortaya çıkard�
 
 Anahtar/priz bileşen sorusu karara bağlandı: şimdilik ayrı kalemler, ileride "set olarak
 ekle" kolaylığı.
+
+**22.08 eki:** kendi indirilebilir şablonumuz gerçek tedarikçi dosyasından daha zayıf
+girdi çıktı — kesit, tedarikçi kodu ve para birimi taşımıyordu, dolayısıyla şablonla
+yüklenen kablo kataloğu aranamıyordu. Şablona dört sütun eklendi ve içe aktarma ürün
+bazlı KDV'yi de okumaya başladı.
 
 **Sıradaki iş artık ürün değil, çıkış.** Güvenlik borcu (parola politikası,
 `python-jose` → `PyJWT`), Eylül canlıya çıkış ve **akrabaya ilk gösterim** — uçtan uca
