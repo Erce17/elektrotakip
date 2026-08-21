@@ -1,0 +1,183 @@
+{# Yazdırılabilir teklif çıktısı.
+
+   `base.html`'i genişletmiyor: gezinme, CDN script'leri ve renkli kutular kâğıda
+   basılmamalı. v1'de PDF üretmiyoruz — tarayıcının "PDF olarak kaydet" akışı zaten
+   PDF veriyor, kütüphane eklemek erken olurdu (26.07 kararı).
+
+   Tailwind CDN'i burada da kullanmıyoruz: yazdırma anında ağ beklemesi çıktıyı
+   stilsiz bastırabilir. Stil dosyanın içinde. #}
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ quote.number }}{% if quote.version > 1 %} rev {{ quote.version }}{% endif %} - Teklif</title>
+<style>
+    :root { --cizgi: #d4d4d8; --soluk: #71717a; }
+    * { box-sizing: border-box; }
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+        color: #18181b; margin: 0; padding: 24px; font-size: 13px; line-height: 1.5;
+        background: #fff;
+    }
+    .sayfa { max-width: 820px; margin: 0 auto; }
+    .baslik { display: flex; justify-content: space-between; gap: 24px;
+              border-bottom: 2px solid #18181b; padding-bottom: 12px; margin-bottom: 20px; }
+    .baslik h1 { margin: 0 0 4px; font-size: 22px; }
+    .kunye { text-align: right; font-size: 12px; color: var(--soluk); white-space: nowrap; }
+    .kunye strong { color: #18181b; font-size: 15px; font-family: monospace; }
+    .taraflar { display: flex; gap: 32px; margin-bottom: 20px; }
+    .taraf { flex: 1; }
+    .taraf h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+                color: var(--soluk); margin: 0 0 4px; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+               color: var(--soluk); text-align: left; padding: 6px 8px;
+               border-bottom: 1px solid #18181b; font-weight: 600; }
+    tbody td { padding: 6px 8px; border-bottom: 1px solid var(--cizgi); vertical-align: top; }
+    .sag { text-align: right; white-space: nowrap; }
+    .kucuk { font-size: 11px; color: var(--soluk); }
+    .toplamlar { margin-top: 16px; margin-left: auto; width: 320px; }
+    .toplamlar td { padding: 4px 8px; border: none; }
+    .toplamlar .ayrac td { border-top: 1px solid var(--cizgi); }
+    .toplamlar .genel td { border-top: 2px solid #18181b; font-weight: 700; font-size: 15px;
+                           padding-top: 8px; }
+    .notlar { margin-top: 24px; font-size: 12px; }
+    .notlar h2 { font-size: 11px; text-transform: uppercase; color: var(--soluk);
+                 margin: 0 0 4px; }
+    .kosullar { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--cizgi);
+                font-size: 11px; color: var(--soluk); }
+    .yazdir { margin-bottom: 20px; }
+    .yazdir button, .yazdir a {
+        font: inherit; padding: 8px 14px; border: 1px solid var(--cizgi);
+        background: #f4f4f5; border-radius: 6px; cursor: pointer; text-decoration: none;
+        color: #18181b; display: inline-block;
+    }
+    @media print {
+        body { padding: 0; font-size: 11.5px; }
+        .yazdir { display: none; }
+        thead { display: table-header-group; }   /* çok sayfalı çıktıda başlık tekrarlar */
+        tr { page-break-inside: avoid; }
+    }
+</style>
+</head>
+<body>
+<div class="sayfa">
+
+    <div class="yazdir">
+        <button onclick="window.print()">Yazdır / PDF olarak kaydet</button>
+        <a href="/quotes/{{ quote.id }}">← Teklife dön</a>
+    </div>
+
+    <div class="baslik">
+        <div>
+            <h1>Fiyat Teklifi</h1>
+            <div class="kucuk">{{ quote.title or "" }}</div>
+        </div>
+        <div class="kunye">
+            <strong>{{ quote.number }}{% if quote.version > 1 %} / rev {{ quote.version }}{% endif %}</strong><br>
+            Düzenleme: {{ bugun.strftime('%d.%m.%Y') }}<br>
+            {% if quote.valid_until %}Geçerlilik: {{ quote.valid_until.strftime('%d.%m.%Y') }}{% endif %}
+        </div>
+    </div>
+
+    <div class="taraflar">
+        <div class="taraf">
+            <h2>Sayın</h2>
+            {% if quote.customer %}
+            <div><strong>{{ quote.customer.name }}</strong></div>
+            {% if quote.customer.phone %}<div class="kucuk">{{ quote.customer.phone }}</div>{% endif %}
+            {% if quote.customer.address %}<div class="kucuk">{{ quote.customer.address }}</div>{% endif %}
+            {% else %}
+            <div class="kucuk">—</div>
+            {% endif %}
+        </div>
+        <div class="taraf">
+            <h2>Para Birimi</h2>
+            <div>{{ quote.currency }}</div>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 28px">#</th>
+                <th>Açıklama</th>
+                <th class="sag">Miktar</th>
+                <th class="sag">Br. Fiyat</th>
+                <th class="sag">İskonto</th>
+                <th class="sag">Tutar</th>
+                <th class="sag">KDV</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for k in sonuc.kalemler %}
+            <tr>
+                <td class="kucuk">{{ loop.index }}</td>
+                <td>
+                    {{ k.ad }}
+                    {% if k.tur != 'malzeme' %}<span class="kucuk">({{ kalem_turleri.get(k.tur, k.tur) }})</span>{% endif %}
+                </td>
+                <td class="sag">{{ k.miktar | fiyat }}</td>
+                <td class="sag">{{ k.birim_fiyat | fiyat }}</td>
+                {# Liste fiyatı ile inen tutarı ayrı göstermek satışın kendisi:
+                   "liste 100 bin, size 62 bin". #}
+                <td class="sag kucuk">
+                    {% set toplam_iskonto = k.kalem_iskontosu + k.zincir_iskontosu %}
+                    {% if toplam_iskonto %}-{{ toplam_iskonto | fiyat }}{% endif %}
+                </td>
+                <td class="sag">{{ k.net | fiyat }}</td>
+                <td class="sag kucuk">%{{ k.kdv_orani | fiyat(0) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <table class="toplamlar">
+        <tbody>
+            <tr>
+                <td>Kalem ara toplamı</td>
+                <td class="sag">{{ sonuc.kalem_ara_toplami | fiyat }}</td>
+            </tr>
+            {% for z in sonuc.zincir %}
+            <tr>
+                <td>{{ z.ad }}</td>
+                <td class="sag">{{ z.etki | fiyat }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="ayrac">
+                <td>Ara toplam (KDV hariç)</td>
+                <td class="sag">{{ sonuc.ara_toplam | fiyat }}</td>
+            </tr>
+            {# KDV oran bazlı dökülüyor: karışık oranlı teklifte tek satır yanlış olur,
+               e-fatura da oran bazlı döküm istiyor. #}
+            {% for oran, dagilim in sonuc.kdv_dagilimi.items() %}
+            <tr>
+                <td class="kucuk">KDV %{{ oran | fiyat(0) }} (matrah {{ dagilim[0] | fiyat }})</td>
+                <td class="sag">{{ dagilim[1] | fiyat }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="genel">
+                <td>Genel Toplam</td>
+                <td class="sag">{{ sonuc.genel_toplam | fiyat }} {{ quote.currency }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    {% if quote.notes %}
+    <div class="notlar">
+        <h2>Notlar</h2>
+        <div>{{ quote.notes }}</div>
+    </div>
+    {% endif %}
+
+    <div class="kosullar">
+        {% if quote.valid_until %}
+        Fiyatlar {{ quote.valid_until.strftime('%d.%m.%Y') }} tarihine kadar geçerlidir.
+        {% endif %}
+        Fiyatlar teklif tarihindeki kur ve liste fiyatları üzerinden hesaplanmıştır.
+    </div>
+
+</div>
+</body>
+</html>

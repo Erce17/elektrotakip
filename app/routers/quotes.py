@@ -289,6 +289,120 @@ def create_quote(
     return RedirectResponse(url=f"/quotes/{quote.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+# --- İşletme varsayılanları ----------------------------------------------
+# ⚠️ `/{quote_id}` route'undan ÖNCE tanımlı olmalı: FastAPI yolları tanım sırasına
+# göre eşleştiriyor, sonra tanımlansaydı "settings" bir teklif id'si sanılırdı.
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def get_settings_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """İşletme varsayılanları ekranı.
+
+    Ürünün tek vaadi burada duruyor: kullanıcı her teklifte her oranı elle giriyorsa
+    iş yine yarım saat sürer, sadece Excel yerine bizim ekranda sürer. Hız
+    esneklikten değil, varsayılanların doğru olmasından gelir.
+    """
+    ayar = kullanici_varsayilanlari(db, current_user)
+    return templates.TemplateResponse(
+        request,
+        "quote_settings.html",
+        {
+            "ayar": ayar,
+            "para_birimleri": PARA_BIRIMLERI,
+            "zincir_turleri": ZINCIR_TURLERI,
+            "kalem_turleri": KALEM_TURLERI,
+            "sablon": quote_service.sablondan_zincir(ayar.adjustment_template),
+        },
+    )
+
+
+@router.post("/settings")
+def update_settings(
+    currency: str = Form("TRY"),
+    vat_rate: str = Form("20"),
+    labor_vat_rate: str = Form("20"),
+    validity_days: str = Form("15"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    ayar = kullanici_varsayilanlari(db, current_user)
+    ayar.currency = normalize_currency(currency) or "TRY"
+    ayar.vat_rate = ondalik_oku(vat_rate, Decimal(20))
+    ayar.labor_vat_rate = ondalik_oku(labor_vat_rate, Decimal(20))
+    gun = ondalik_oku(validity_days, Decimal(15))
+    ayar.validity_days = max(1, int(gun))
+    db.commit()
+
+    return RedirectResponse(url="/quotes/settings", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/settings/template")
+def add_template_step(
+    kind: str = Form(...),
+    value: str = Form("0"),
+    label: str = Form(""),
+    base: str = Form(motor.TABAN_YURUYEN),
+    scope: str = Form(motor.KAPSAM_ISKONTOYA_TABI),
+    vat_rate: str = Form(""),
+    added_kind: str = Form(motor.DIGER),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """Varsayılan zincir şablonuna adım ekler.
+
+    Şablon JSON olarak duruyor çünkü üzerinde hesap yapılmıyor — yeni teklife
+    kopyalanıyor. Hesaba giren zincir her zaman `quote_adjustments` satırlarıdır.
+    """
+    ayar = kullanici_varsayilanlari(db, current_user)
+    if kind not in ZINCIR_TURLERI:
+        return RedirectResponse(url="/quotes/settings", status_code=status.HTTP_303_SEE_OTHER)
+
+    satirlar = list(ayar.adjustment_template or [])
+    satirlar.append(
+        {
+            "position": len(satirlar),
+            "kind": kind,
+            "value": str(ondalik_oku(value)),
+            "label": label.strip() or None,
+            "base": base,
+            "scope": scope,
+            "vat_rate": str(ondalik_oku(vat_rate)) if vat_rate else None,
+            "added_kind": added_kind,
+        }
+    )
+    # JSON kolonu yerinde değiştirilince SQLAlchemy değişikliği görmüyor; yeni
+    # liste atamak gerekiyor.
+    ayar.adjustment_template = satirlar
+    db.commit()
+
+    return RedirectResponse(url="/quotes/settings", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/settings/template/{sira}/delete")
+def delete_template_step(
+    sira: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    ayar = kullanici_varsayilanlari(db, current_user)
+    satirlar = list(ayar.adjustment_template or [])
+    if 0 <= sira < len(satirlar):
+        satirlar.pop(sira)
+        for yeni_sira, satir in enumerate(satirlar):
+            satir["position"] = yeni_sira
+        ayar.adjustment_template = satirlar
+        db.commit()
+
+    return RedirectResponse(url="/quotes/settings", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# --- Teklif detayı -------------------------------------------------------
+
+
 @router.get("/{quote_id}", response_class=HTMLResponse)
 def get_quote_page(
     request: Request,
@@ -591,3 +705,119 @@ def move_adjustment(
         db.commit()
 
     return govde_yaniti(request, db, quote)
+
+
+# --- Çıktı ve revizyon ---------------------------------------------------
+
+
+@router.get("/{quote_id}/print", response_class=HTMLResponse)
+def print_quote(
+    request: Request,
+    quote_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """Yazdırılabilir teklif çıktısı.
+
+    v1'de PDF yok: yazdırılabilir HTML yeterli (26.07 kararı). Tarayıcının kendi
+    "PDF olarak kaydet" akışı zaten PDF üretiyor; kütüphane eklemek erken olurdu.
+    """
+    quote = get_owned_quote(db, current_user, quote_id)
+    if quote is None:
+        return HTMLResponse("Teklif bulunamadı.", status_code=404)
+
+    return templates.TemplateResponse(
+        request,
+        "quote_print.html",
+        {
+            "quote": quote,
+            "sonuc": quote_service.hesapla(quote),
+            "kalem_turleri": KALEM_TURLERI,
+            "bugun": date.today(),
+        },
+    )
+
+
+@router.post("/{quote_id}/revise")
+def revise_quote(
+    quote_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """Teklifin yeni bir revizyonunu açar. Eskisine dokunmaz.
+
+    Aynı işin ikinci-üçüncü teklifi gerçek bir ihtiyaç ve demonun en güçlü anı.
+    Revizyon eskisini değiştirmez: aynı numarayı taşır, versiyonu artar, ikisi
+    yan yana durur. Kalemler **kopyalanır** — dondurulmuş fiyat ve kur da dahil,
+    yani eski teklif kendi tarihindeki rakamları korur.
+    """
+    kaynak = get_owned_quote(db, current_user, quote_id)
+    if kaynak is None:
+        return HTMLResponse("Teklif bulunamadı.", status_code=404)
+
+    # Zincirin en yüksek versiyonundan devam et: 3. revizyon 2'nin üstüne biner.
+    en_son = (
+        db.query(Quote)
+        .filter(Quote.user_id == current_user.id, Quote.number == kaynak.number)
+        .order_by(Quote.version.desc())
+        .first()
+    )
+
+    ayar = kullanici_varsayilanlari(db, current_user)
+    yeni = Quote(
+        user_id=current_user.id,
+        customer_id=kaynak.customer_id,
+        number=kaynak.number,
+        version=en_son.version + 1,
+        parent_quote_id=kaynak.id,
+        title=kaynak.title,
+        notes=kaynak.notes,
+        currency=kaynak.currency,
+        # Yeni revizyon yeni bir geçerlilik süresi ister; eskisinin tarihi geçmiş olabilir.
+        valid_until=date.today() + timedelta(days=ayar.validity_days),
+        items=[_kalem_kopyala(k) for k in kaynak.items if k.parent_item_id is None],
+        adjustments=[_zincir_kopyala(a) for a in kaynak.adjustments],
+    )
+    db.add(yeni)
+    db.commit()
+
+    return RedirectResponse(url=f"/quotes/{yeni.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _kalem_kopyala(kalem: QuoteItem) -> QuoteItem:
+    """Kalemi dondurulmuş fiyatıyla birlikte kopyalar.
+
+    Fiyat yeniden katalogdan okunmaz: revizyon "aynı işin yeni teklifi", fiyat
+    güncellemesi ayrı bir karar. Kullanıcı isterse kalemi kendisi güncelliyor.
+    """
+    return QuoteItem(
+        product_id=kalem.product_id,
+        supplier_code=kalem.supplier_code,
+        position=kalem.position,
+        name=kalem.name,
+        description=kalem.description,
+        unit=kalem.unit,
+        kind=kalem.kind,
+        quantity=kalem.quantity,
+        source_currency=kalem.source_currency,
+        source_unit_price=kalem.source_unit_price,
+        fx_rate=kalem.fx_rate,
+        unit_price=kalem.unit_price,
+        vat_rate=kalem.vat_rate,
+        discountable=kalem.discountable,
+        adjustments=[_zincir_kopyala(a) for a in kalem.adjustments],
+    )
+
+
+def _zincir_kopyala(adim: QuoteAdjustment) -> QuoteAdjustment:
+    return QuoteAdjustment(
+        position=adim.position,
+        label=adim.label,
+        kind=adim.kind,
+        value=adim.value,
+        base=adim.base,
+        scope=adim.scope,
+        vat_rate=adim.vat_rate,
+        added_discountable=adim.added_discountable,
+        added_kind=adim.added_kind,
+    )

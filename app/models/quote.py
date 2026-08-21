@@ -89,7 +89,11 @@ class Quote(Base):
         cascade="all, delete-orphan",
         order_by="QuoteAdjustment.position",
     )
-    revisions = relationship("Quote", cascade="all, delete-orphan")
+    # ⚠️ Bilerek cascade YOK. Revizyon ayrı bir tekliftir, alt kayıt değil:
+    # `delete-orphan` konulunca 1. sürümü silmek 2. ve 3. sürümü de götürüyordu.
+    # Kullanıcı eski sürümü temizlerken en güncel teklifini kaybederdi. Silinen
+    # sürümün çocukları köksüz kalır (`parent_quote_id` NULL olur), silinmez.
+    revisions = relationship("Quote")
 
 
 class QuoteItem(Base):

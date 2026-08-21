@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Teklif Varsayılanları - ElektroTakip{% endblock %}
+
+{% block content %}
+
+<div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    <div>
+        <h1 class="text-2xl font-bold text-slate-800">Teklif Varsayılanları</h1>
+        <p class="text-slate-500 text-sm max-w-2xl">
+            Burada bir kez tanımlanan değerler her yeni teklife kopyalanır. Teklif
+            içinde üzerine yazabilirsin. <strong>Hız esneklikten değil,
+            varsayılanların doğru olmasından gelir</strong> — her teklifte her oranı
+            elle girmen gerekiyorsa iş yine yarım saat sürer.
+        </p>
+    </div>
+    <a href="/quotes" class="text-sm text-slate-500 hover:text-slate-800">← Tekliflere dön</a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+    <div class="lg:col-span-1">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-semibold text-slate-700 mb-4">Temel Ayarlar</h2>
+            <form action="/quotes/settings" method="POST" class="space-y-3">
+                {% include 'partials/csrf_field.html' %}
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Para Birimi</label>
+                    <select name="currency" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                        {% for p in para_birimleri %}
+                        <option value="{{ p }}" {% if ayar.currency == p %}selected{% endif %}>{{ p }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">KDV %</label>
+                        <input type="text" name="vat_rate" value="{{ ayar.vat_rate | fiyat(0) }}"
+                               class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">İşçilik KDV %</label>
+                        <input type="text" name="labor_vat_rate" value="{{ ayar.labor_vat_rate | fiyat(0) }}"
+                               class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Geçerlilik (gün)</label>
+                    <input type="text" name="validity_days" value="{{ ayar.validity_days }}"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    <p class="text-xs text-slate-400 mt-1">
+                        Yeni teklifin geçerlilik tarihi bu kadar gün sonrasına ayarlanır.
+                        Kablo fiyatı bakıra ve dolara endeksli, günlük oynuyor.
+                    </p>
+                </div>
+                <button type="submit" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 rounded-lg text-sm transition">
+                    Kaydet
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="lg:col-span-2">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-200">
+                <h2 class="text-lg font-semibold text-slate-700">Varsayılan Hesap Zinciri</h2>
+                <p class="text-xs text-slate-500 mt-1">
+                    Yeni açılan her teklife bu adımlar sırayla kopyalanır. Müşterinin kendi
+                    zinciri varsa onun zinciri bunun yerine geçer. Kopyalanır, bağlanmaz:
+                    burada yaptığın değişiklik geçmiş teklifleri etkilemez.
+                </p>
+            </div>
+
+            {% if sablon %}
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+                    <tr>
+                        <th class="text-left px-4 py-2">Adım</th>
+                        <th class="text-left px-2 py-2">Kapsam</th>
+                        <th class="text-left px-2 py-2">Taban</th>
+                        <th class="px-2 py-2"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for adim in sablon %}
+                    <tr class="hover:bg-slate-50">
+                        <td class="px-4 py-2">
+                            <span class="text-slate-400 font-mono text-xs mr-1">{{ loop.index }}.</span>
+                            <span class="text-slate-800">{{ adim.label or zincir_turleri.get(adim.kind, adim.kind) }}</span>
+                            <span class="text-xs text-slate-400 ml-1">
+                                {{ zincir_turleri.get(adim.kind, adim.kind) }}
+                                {% if adim.kind in ('iskonto_yuzde', 'ek_yuzde') %}%{{ adim.value | fiyat(0) }}{% else %}{{ adim.value | fiyat }}{% endif %}
+                            </span>
+                        </td>
+                        <td class="px-2 py-2 text-xs text-slate-500">
+                            {% if adim.scope == 'tumu' %}tüm kalemler{% else %}iskontoya tabi olanlar{% endif %}
+                        </td>
+                        <td class="px-2 py-2 text-xs text-slate-500">
+                            {% if adim.base == 'kalem_toplami' %}kalem toplamı{% else %}yürüyen tutar{% endif %}
+                        </td>
+                        <td class="px-2 py-2 text-right">
+                            <form action="/quotes/settings/template/{{ loop.index0 }}/delete" method="POST" class="inline">
+                                {% include 'partials/csrf_field.html' %}
+                                <button type="submit" class="text-red-600 hover:text-red-800 text-xs">Sil</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="px-6 py-8 text-center text-slate-400 text-sm">
+                Varsayılan zincir boş. Her teklifte iskontoyu elle giriyorsan buraya
+                bir adım ekle — asıl kazanç burada.
+            </div>
+            {% endif %}
+
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200">
+                <form action="/quotes/settings/template" method="POST"
+                      class="flex flex-wrap items-end gap-2 text-xs">
+                    {% include 'partials/csrf_field.html' %}
+                    <label class="flex flex-col">
+                        <span class="text-slate-500 mb-0.5">Adım</span>
+                        <select name="kind" class="px-2 py-1.5 border border-slate-300 rounded bg-white">
+                            {% for anahtar, etiket in zincir_turleri.items() %}
+                            <option value="{{ anahtar }}">{{ etiket }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="flex flex-col">
+                        <span class="text-slate-500 mb-0.5">Değer</span>
+                        <input type="text" name="value" value="0" class="w-20 px-2 py-1.5 border border-slate-300 rounded">
+                    </label>
+                    <label class="flex flex-col">
+                        <span class="text-slate-500 mb-0.5">Etiket</span>
+                        <input type="text" name="label" placeholder="Bayi iskontosu"
+                               class="w-36 px-2 py-1.5 border border-slate-300 rounded">
+                    </label>
+                    <label class="flex flex-col">
+                        <span class="text-slate-500 mb-0.5">Kapsam</span>
+                        <select name="scope" class="px-2 py-1.5 border border-slate-300 rounded bg-white">
+                            <option value="iskontoya_tabi">İskontoya tabi kalemler</option>
+                            <option value="tumu">Tüm kalemler</option>
+                        </select>
+                    </label>
+                    <label class="flex flex-col">
+                        <span class="text-slate-500 mb-0.5">Taban</span>
+                        <select name="base" class="px-2 py-1.5 border border-slate-300 rounded bg-white">
+                            <option value="yuruyen">Yürüyen tutar</option>
+                            <option value="kalem_toplami">Kalem toplamı</option>
+                        </select>
+                    </label>
+                    <label class="flex flex-col">
+                        <span class="text-slate-500 mb-0.5">Eklenen tür</span>
+                        <select name="added_kind" class="px-2 py-1.5 border border-slate-300 rounded bg-white">
+                            {% for anahtar, etiket in kalem_turleri.items() %}
+                            <option value="{{ anahtar }}" {% if anahtar == 'diger' %}selected{% endif %}>{{ etiket }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <button type="submit" class="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded">
+                        Adım Ekle
+                    </button>
+                </form>
+                <p class="text-xs text-slate-400 mt-2">
+                    Zincirli iskonto çarpımsaldır: %20 sonra %10, %30 değil %28 indirim yapar.
+                    İki ayrı adım eklemek ile tek adıma %30 yazmak aynı şey değil.
+                </p>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

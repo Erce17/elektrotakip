@@ -14,8 +14,36 @@
         </div>
         <p class="text-slate-500 text-sm">{{ quote.title or "İsimsiz teklif" }}</p>
     </div>
-    <a href="/quotes" class="text-sm text-slate-500 hover:text-slate-800">← Tekliflere dön</a>
+    <div class="flex items-center gap-2">
+        <a href="/quotes/{{ quote.id }}/print" target="_blank"
+           class="px-3 py-2 text-sm border border-slate-300 rounded-lg hover:bg-slate-100 transition">
+            Yazdır / PDF
+        </a>
+        <form action="/quotes/{{ quote.id }}/revise" method="POST" class="inline">
+            {% include 'partials/csrf_field.html' %}
+            <button type="submit"
+                    class="px-3 py-2 text-sm border border-amber-300 bg-amber-50 text-amber-800 rounded-lg hover:bg-amber-100 transition">
+                Revizyon Aç
+            </button>
+        </form>
+        <form action="/quotes/{{ quote.id }}/delete" method="POST" class="inline"
+              onsubmit="return confirm('Bu teklif silinsin mi?')">
+            {% include 'partials/csrf_field.html' %}
+            <button type="submit" class="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition">
+                Sil
+            </button>
+        </form>
+        <a href="/quotes" class="text-sm text-slate-500 hover:text-slate-800 ml-2">← Tekliflere dön</a>
+    </div>
 </div>
+
+{% if quote.parent_quote_id %}
+<div class="mb-6 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm">
+    Bu bir revizyon. Önceki sürüm silinmedi —
+    <a href="/quotes/{{ quote.parent_quote_id }}" class="underline">buradan</a> görebilirsin.
+    Kalemler dondurulmuş fiyatlarıyla kopyalandı.
+</div>
+{% endif %}
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
