@@ -25,6 +25,7 @@ app/
 ├── quote_engine.py   → teklif hesap motoru (saf, DB bilmez)
 ├── quote_service.py  → ORM ↔ motor köprüsü
 ├── excel_import.py   → tedarikçi dosyası ayrıştırma (saf, DB bilmez)
+├── product_search.py → ürün parametresi ayrıştırma + arama (saf)
 ├── models/    → user, customer, catalog (Category + Product), quote
 ├── routers/   → auth · catalog · customers · quotes
 └── templates/ → base, home, login, register, catalog, customers, partials/
@@ -78,6 +79,12 @@ Amaç kodun temizlenmesi kadar Erce'nin kendi projesini tanıması.
 - **İlişki kurarken "silinince ne olmalı" ayrıca sorulur.** `delete-orphan` "bu kayıt
   onsuz anlamsız" demektir. Revizyon öyle değil — cascade konulduğunda eski sürümü
   silmek en güncel teklifi götürüyordu.
+- **Mükerrer kimliği ürünü ayıran şeyi içermeli.** Öznur'da ürün adı tekrar ediyor ve
+  ürünleri ayıran tek şey kesit; kimlikte olmadığı için 1614 satır sessizce atılmıştı.
+  Kimlik kurarken "bu iki kaydı ne ayırır" sorusu ayrıca sorulmalı.
+- **Ayrıştırma kalıbı bağlamı bilmeli.** Aynı `NxM` kalıbı serbest metinde çöp
+  (Viko'da ürün kodu, Klemsan'da kontak değeri), `Kesit (mm2)` sütununda güvenilir.
+  Her yere aynı regex'i uygulama; verinin nereden geldiğine bak.
 
 ## Kurallar
 - Paket işlemleri `uv` ile (`pip` değil).

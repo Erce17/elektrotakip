@@ -8,13 +8,13 @@
 
 ## Son oturum
 **Tarih:** 2026-08-21 (Thufir)
-**Yapılan:** Üç paket birden: **teklif motoru**, **içe aktarma**, **teklif ekranı.**
-Commit `de10755` → `ea20ff3`. `main` push edilmiş, çalışan dizin temiz.
-**Test:** 381 geçiyor (oturum başında 144).
+**Yapılan:** Dört iş: **teklif motoru**, **içe aktarma**, **teklif ekranı**, **ürün arama.**
+Commit `de10755` → `56fab72`. `main` push edilmiş, çalışan dizin temiz.
+**Test:** 463 geçiyor (oturum başında 144).
 
 > **Ağustos'un üç haftalık planı kapandı.** 08.08'de "1. hafta motor, 2. hafta ekran,
-> 3. hafta katalog" denmişti; motor ve ekran bitti, katalog tarafında içe aktarma
-> bitti. Kalan: kablo parametreli arama + güvenlik borcu + canlıya çıkış.
+> 3. hafta katalog + kablo parametreli arama" denmişti; dördü de bitti.
+> **Kalan: güvenlik borcu + canlıya çıkış + gerçek kullanıcıyla deneme.**
 
 ### Ne kuruldu
 
@@ -24,16 +24,19 @@ Commit `de10755` → `ea20ff3`. `main` push edilmiş, çalışan dizin temiz.
 | `app/quote_service.py` | ORM ↔ motor köprüsü. Hesap mantığı burada değil |
 | `app/models/quote.py` | `Quote` · `QuoteItem` · `QuoteAdjustment` · `QuoteDefaults` |
 | `app/excel_import.py` | Tedarikçi dosyası ayrıştırma. Saf, DB bilmez |
+| `app/product_search.py` | Parametre ayrıştırma + arama. Saf, sahiplik filtresini bilmez |
 | `app/routers/quotes.py` | Teklif ekranı. Route'ta tek bir çarpma yok |
-| `alembic/.../2bd390383d15` | Migration. Postgres'te upgrade→downgrade→upgrade doğrulandı |
+| `alembic/.../2bd390383d15` | Teklif tabloları. Postgres'te upgrade→downgrade→upgrade doğrulandı |
+| `alembic/.../254add4c7164` | Ürün parametre kolonları. Hepsi nullable |
 
 | Test dosyası | Kapsam |
 |---|---|
 | `test_quote_engine.py` | 36 — iş kuralları, fixture'sız |
 | `test_quote_model.py` | 19 — model, köprü, kısıtlar |
-| `test_supplier_files.py` | 116 — 11 gerçek tedarikçi dosyası |
+| `test_supplier_files.py` | 118 — 11 gerçek tedarikçi dosyası |
 | `test_quotes_router.py` | 37 — erişim kontrolü, kalem/zincir akışı |
-| `test_quotes_output.py` | 30 — çıktı, revizyon, varsayılanlar |
+| `test_quotes_output.py` | 31 — çıktı, revizyon, varsayılanlar |
+| `test_product_search.py` | 80 — parametre ayrıştırma, yanlış pozitifler, arama |
 
 ### Motorun tasarım kararları (bunlar artık kod)
 
@@ -110,8 +113,7 @@ adlar elenir.
    geçerli. Ayırt edici ölçüt ad değil, fiyat hücresinin sayıya çevrilebilmesi.
 
 ### Bilerek yapılmayanlar
-- **Kablo parametreli ayrıştırma yok** (kesit, damar sayısı, iletken). 3. hafta işi,
-  aşağıda duruyor.
+- ~~Kablo parametreli ayrıştırma yok~~ → ✅ aynı oturumda yapıldı, aşağıya bak.
 - **Marka sütunu gerçek dosyalarda yok.** Alan tanınıyor ama 11 dosyanın hiçbirinde
   geçmiyor; ürünlerin `brand`'i boş kalıyor.
 - **İki seviyeli paketleme** (`Kutudaki Adet` + `Kolideki Adet`) okunuyor ama ürüne
@@ -165,8 +167,7 @@ silinmiyor. Revizyon ayrı bir tekliftir, alt kayıt değil.
 
 ### Bilerek yapılmayanlar
 - **Ürün arama yok.** Katalogdan kalem eklerken ilk 500 ürün bir `select` içinde
-  listeleniyor. Klemsan tek başına 3.694 ürün veriyor — **bu ölçekte kullanılamaz.**
-  Kablo parametreli arama işiyle birlikte çözülmeli, sıradaki iş bu.
+  listeleniyor. ✅ **Bu oturumda çözüldü** — aşağıdaki "ürün arama" bölümü.
 - **Kur elle giriliyor.** Otomatik kur çekme yok; teklif anında dondurma çalışıyor.
 - **Teklif durumu (`status`) kullanılmıyor.** Alan var, ekranda yok — "gönderildi /
   kabul edildi" takibi v1 kapsamında değil.
@@ -176,23 +177,89 @@ silinmiyor. Revizyon ayrı bir tekliftir, alt kayıt değil.
 
 ---
 
+# ÜRÜN ARAMA (21.08, bitti)
+
+**`app/product_search.py`** — saf katman, DB bilmez. Sorgu kurucu SQLAlchemy ifadesi
+üretiyor ama **sahiplik filtresini bilmiyor**: onu çağıran koyar, yoksa unutulduğu
+yerde açık oluşur.
+
+Teklif ekranındaki ürün seçimi ilk 500 ürünü basan bir açılır listeydi. Artık sahada
+konuşulduğu gibi aranıyor:
+
+| Yazılan | Anlaşılan |
+|---|---|
+| `3x2.5 NYY` | 3 damar + 2,5 mm² + adı NYY'ye uyanlar |
+| `5x16 bakır` | 5 damar + 16 mm² + iletken bakır |
+| `2.5-6 mm2 nya` | kesit 2,5–6 arası + metin "nya" |
+| `OZ-003` | tedarikçi kodu |
+| `klemens` | sadece metin |
+
+`Product`'a `cross_section` · `core_count` · `conductor` · `insulation` · `sheathed`
+eklendi. **Ayrı kolon** tercih edildi (EAV/JSON değil): alanlar az sayıda, sayısal ve
+aralık sorgusu istiyor, index'lenebilir ve okunur kalıyor. Hepsi nullable — çıkarılamayan
+parametre NULL kalır ve ürün metinle bulunmaya devam eder.
+
+### Ölçüm ayrıştırıcının şeklini belirledi
+- **Çıplak `NxM` kalıbı çoğunlukla YANLIŞ POZİTİF.** Viko'da ürün kodu (`926Y5X01`),
+  Klemsan'da kontak değeri (`2x8A/250VAC`) ve fiziksel ölçü (`96x96mm`, `5x20`),
+  Tense'de ekran boyutu (`3x20 mm`). Viko'da 532, Klemsan'da 496 satır bu kalıbı
+  içeriyor ve **hiçbiri kablo değil.** Kesit yalnızca `mm²` bağlamından ya da dosyanın
+  kendi kesit sütunundan okunuyor.
+- **Öznur'da kesit ürün adında değil, ayrı `Kesit (mm2)` sütununda** ve sahada konuşulan
+  yazımı birebir taşıyor: `4x25`, `2x1.5`, `3x25+16`. O sütun tanındı; `+16` faz dışı
+  iletken olduğu için damar sayısına katılmıyor ("3x25+16" sahada üç damarlı).
+- **Molwex'te `0.5-1.5 mm²` bir aralık** — pabucun hizmet ettiği kablo aralığı, ürünün
+  kendi kesiti değil. Kesit yazılmıyor, `kesit_araligi_mi` ile işaretleniyor.
+
+**Sonuç:** Öznur (kablo tedarikçisi) 1673 satırın 1673'ünde kesit, 1547'sinde damar.
+Erse 298 satır. Kablo olmayan altı dosyada **sıfır** kesit uydurulmuyor.
+
+### Yakalanan iki sessiz veri kaybı
+1. **`mm\s*[²2]` kalıbı `"mm 200/5"` metninde eşleşiyordu** — Tense'in akım trafosunu
+   30 damarlı 10 mm² kablo sanıyordu. Boşluklu biçim artık yalnızca gerçek `²` kabul
+   ediyor; bitişik `mm2` güvenli ama ardından rakam gelmemeli.
+2. **Mükerrer kimliği parametreleri içermiyordu.** Öznur'un 1673 satırında tedarikçi
+   kodu yok ve ürün adı tekrar ediyor; ürünleri ayıran şey kesit. **1614 satır mükerrer
+   sanılıp atılıyordu, kablo kataloğu 59 ürüne iniyordu.** Kimliğe `cross_section` ve
+   `core_count` girdi → 1505 ayrı ürün.
+
+Ürün adı artık kesiti taşıyor (`... 2x1.5 mm²`) — aynı ad onlarca satırda tekrar edince
+liste okunmuyordu.
+
+**`/catalog/reparse-parameters`** — parametre alanları eklenmeden önce aktarılmış
+katalogları kurtarma yolu. Yalnızca parametresi boş olanlara dokunur, elle girilmiş
+değeri ezmez.
+
+### Bilerek yapılmayanlar
+- **Kablo tipi kodu yalıtıma çevrilmiyor.** `NYA`/`NYM` = PVC, `N2XH` = XLPE gibi
+  eşlemeler yapılmadı; Öznur'un adlarında PVC/Cu yazmıyor, bu yüzden o dosyada
+  iletken/yalıtım boş kalıyor. Metin aramasıyla bulunuyorlar.
+- **Kesit aralığı arananla kesişmiyor.** Molwex'in `0.5-1.5 mm²` pabucu "1.5 mm²"
+  aramasında çıkmaz. `section_min`/`section_max` kolonları gerekirdi; v1 kapsamında
+  değil — kullanıcının ihtiyacı kablo, pabuç aralığı değil.
+- **Kablo dışı parametreler yok** (amper, kutup sayısı, IP sınıfı). Aşağıdaki açık soru.
+
+---
+
 ## Sırada
 
-**1. Ürün arama + kablo parametreli arama.** İkisi aynı iş: teklif ekranındaki ürün
-seçimi 3.694 ürünle kullanılamaz durumda ve aramanın işe yaraması için parametrelerin
-ayrıştırılması gerekiyor. Aşağıdaki "kablo parametreleri" bölümü.
-
-**2. Güvenlik borcu — canlıya çıkmadan zorunlu:**
+**1. Güvenlik borcu — canlıya çıkmadan zorunlu:**
 - **G7** parola politikası + e-posta doğrulaması yok. Tek karakterlik parola kabul ediliyor.
 - **G6** `python-jose` bakımsız, bilinen CVE'leri var. `PyJWT`'ye geçiş küçük iş.
 - Canlıya çıkarken `SECRET_KEY` ve `COOKIE_SECURE=true` ortam değişkeni olarak verilmeli.
 
-**3. Canlıya çıkış (Eylül).** Railway trial bitmiş. T10 (Tailwind CDN'den çekiliyor,
+**2. Canlıya çıkış (Eylül).** Railway trial bitmiş. T10 (Tailwind CDN'den çekiliyor,
 üretim için önerilmiyor) v2'ye kesilmişti ama yazdırma çıktısında zaten CDN
 kullanılmıyor; teklif ekranı CDN'e bağlı.
 
-**4. Gerçek kullanıcıyla ilk deneme.** Motor ve ekran hazır olduğuna göre akrabaya
-gösterilebilir hâle geldi. Aşağıdaki 5 soru bu denemede kendiliğinden cevaplanır.
+**3. Gerçek kullanıcıyla ilk deneme — ARTIK MÜMKÜN.** Uçtan uca akış çalışıyor:
+tedarikçi Excel'i içeri, ürün araması, teklif, yazdırma. Akrabaya gösterilebilir.
+Aşağıdaki 5 soru bu denemede kendiliğinden cevaplanır.
+
+**Öneri (Thufir):** sıralamayı bu şekilde yapma. **Önce 3, sonra 1-2.** Gerekçe:
+güvenlik borcu canlıya çıkmadan kapatılmalı ama denemeyi kendi makinende yapabilirsin
+ve gerçek kullanıcı geri bildirimi hangi ekranın yeniden yazılacağını belirler.
+Güvenliği önce kapatıp sonra ekranı baştan yazmak iki kez iş demek. Karar sende.
 
 ---
 
@@ -285,7 +352,12 @@ hesap birimi değil.
 
 ---
 
-## Kablo parametreleri — 3. hafta işi
+## Kablo parametreleri — ✅ 21.08'de yapıldı
+
+> Aşağıdaki analiz 26 Temmuz'da yazıldı ve **uygulandı.** Ne yapıldığı yukarıdaki
+> "ÜRÜN ARAMA" bölümünde; burası kararın gerekçesi olarak duruyor. Tek fark:
+> ayrıştırıcı serbest metinde çıplak `NxM` kalıbına güvenmiyor, çünkü ölçümde
+> bu kalıbın çoğunlukla kablo değil ürün kodu/kontak değeri olduğu çıktı.
 
 ### Sorun
 `technical_specs` tek bir uzun metin, parametreler ayrıştırılmamış:
@@ -309,21 +381,22 @@ istiyor; index'lenebilir ve okunur kalıyor.
 **Açık soru:** kablo dışı ürünlerde ayırt edici parametreler (anahtar/priz/sigortada amper,
 kutup sayısı, IP sınıfı) — aynı yapı onlara da kurulsun mu, şimdilik sadece kablo mu?
 
-⚠️ **Bu iş artık teklif ekranını da bloke ediyor:** kalem eklerken ürün seçimi 500 ürünle
-sınırlı bir `select`. Klemsan tek başına 3.694 ürün. Arama olmadan ekran gerçek katalogla
-kullanılamaz.
+**Açık kalan:** kablo dışı ürünlerde ayırt edici parametreler (anahtar/priz/sigortada
+amper, kutup sayısı, IP sınıfı). Kablo tarafı bitti; bunlar gerçek kullanıcı denemesinde
+ihtiyaç çıkarsa eklenir. Yapı aynı kalıpla genişliyor: ölç, ayrı kolon, testle sabitle.
 
 ---
 
 ## Test durumu
-`uv run pytest` → **381 test.** Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
+`uv run pytest` → **463 test.** Bellekte SQLite ile koşuyor, PostgreSQL gerekmiyor.
 
 | Dosya | Kapsam |
 |---|---|
 | `test_quote_engine.py` | Hesap zinciri, KDV, yuvarlama, dağıtım, kur (36) |
 | `test_quote_model.py` | Model, ORM↔motor köprüsü, fiyat donması, kısıtlar (19) |
 | `test_quotes_router.py` | Teklif ekranı: erişim kontrolü, kalem/zincir akışı (37) |
-| `test_quotes_output.py` | Yazdırma çıktısı, revizyon, işletme varsayılanları (30) |
+| `test_quotes_output.py` | Yazdırma çıktısı, revizyon, işletme varsayılanları (31) |
+| `test_product_search.py` | Parametre ayrıştırma, yanlış pozitifler, arama, yeniden ayrıştırma (80) |
 | `test_supplier_files.py` | 11 gerçek tedarikçi dosyası: ayrıştırma + uçtan uca içe aktarma (116) |
 | `test_catalog_isolation.py` | Erişim kontrolü + IDOR |
 | `test_customers_isolation.py` | Müşteri izolasyonu |
@@ -355,12 +428,14 @@ kullanılamaz.
 | **Cascade bir iş kararıdır** | `delete-orphan` "bu kayıt onsuz anlamsız" demek. Revizyon öyle değil: ayrı bir tekliftir. Cascade konulunca 1. sürümü silmek en güncel teklifi götürüyordu. İlişki kurarken "silinince ne olmalı" sorusu ayrıca sorulmalı. | 21.08 |
 | **Şablonda indeks sayma** | Motorun çıktısıyla DB kayıtlarını indeks üzerinden eşleştirmek, iki listenin filtresi ayrıştığı gün sessizce kayar. Eşleştirme veriyi üreten yerde açıkça kurulmalı — şablon sadece göstermeli. | 21.08 |
 | **Yol sırası eşleştirmeyi belirler** | FastAPI yolları tanım sırasına göre eşleştiriyor. `/quotes/settings`, `/quotes/{quote_id}`'den sonra tanımlansaydı "settings" bir id sanılıp 422 dönerdi. Sabit yollar parametreli olanlardan önce gelmeli. | 21.08 |
+| **Kalıp bağlamdan güç alır** | Aynı `NxM` kalıbı serbest metinde çöp, "Kesit (mm2)" sütununda güvenilir — çünkü sütun başlığı bağlamı garanti ediyor. Ayrıştırıcı verinin nereden geldiğini bilmeli; her yere aynı regex'i uygulamak Viko'da 532 ürün kodunu kablo yapardı. | 21.08 |
+| **Mükerrer kimliği ürünü ayıran şeyi içermeli** | Öznur'da ad tekrar ediyor, ürünleri ayıran kesit. Kimlik (kategori+özellik+marka) olduğu için 1614 satır mükerrer sanılıp atıldı. "Bu iki kaydı ne ayırır" sorusu kimlik kurulurken sorulmalı. | 21.08 |
 
 ---
 
 ## Vault özeti (Olric'e taşınacak)
 **Elektrotakip artık uçtan uca çalışıyor: tedarikçi Excel'i içeri, teklif dışarı.**
-Ağustos'un üç haftalık planı tek oturumda kapandı.
+Ağustos'un üç haftalık planı tek oturumda kapandı; 144 testten **463 teste** çıkıldı.
 
 **Teklif motoru** — ürünün satılan parçası: sıralı ve yeniden düzenlenebilir hesap
 zinciri, çarpımsal iskonto, satır bazında GİB uyumlu KDV yuvarlaması, kuruş kaybetmeyen
@@ -370,21 +445,27 @@ fixture'sız koşuyor.
 
 **İçe aktarma** gerçek tedarikçi dosyalarını yiyor: başlık satırını ve sütun adlarını
 kendisi tanıyor, çoklu sayfa ve eski `.xls` okuyor, bölüm başlıklarını ürün sanmıyor,
-üç farklı para birimini çözüyor. 11 gerçek dosyanın 11'i okunuyor (~13.600 satır).
+üç para birimini çözüyor. 11 gerçek dosyanın 11'i okunuyor (~13.600 satır).
 
 **Teklif ekranı** motoru kullanıcının önüne koydu: katalogdan veya elle kalem, "20/10"
 yazımıyla iskonto zinciri, sırası ↑↓ ile değiştirilebilen hesap zinciri, canlı toplam,
 yazdırılabilir çıktı, revizyon ve işletme varsayılanları. Ekranda tek bir hesap satırı
 yok — her rakam motordan geliyor.
 
-Testler bu oturumda **üç sessiz veri kaybı** yakaladı: bir sütun eşleşme hatası Molwex'te
-699, bir bölüm başlığı kuralı Viko'da 822 ürünü atıyordu; bir ORM cascade'i ise eski
-teklifi silerken en güncel revizyonu götürüyordu. Proje 144 testten **381 teste** çıktı.
+**Ürün arama** kablo parametrelerini ayrıştırdı ve sahada konuşulan ifadeyi anlıyor:
+"3x2.5 NYY", "5x16 bakır", "2.5-6 mm² arası". Öznur'un 1673 kablosunun tamamında kesit
+çıkarılıyor; kablo olmayan altı dosyada sıfır yanlış pozitif.
+
+**Testler bu oturumda beş sessiz veri kaybı yakaladı.** İkisi sütun eşleştirmesinde
+(Molwex'te 699, Viko'da 822 ürün atılıyordu), biri ORM cascade'inde (eski teklifi silmek
+en güncel revizyonu götürüyordu), biri regex'te (akım trafosu kablo sanılıyordu), biri
+mükerrer kimliğinde (Öznur'un kablo kataloğu 1673 satırdan 59 ürüne iniyordu). Hiçbiri
+arayüzden görünmüyordu; hepsini gerçek dosyalarla ölçüm ortaya çıkardı.
 
 Anahtar/priz bileşen sorusu karara bağlandı: şimdilik ayrı kalemler, ileride "set olarak
 ekle" kolaylığı.
 
-**Sıradaki iş: ürün arama.** Teklif ekranında kalem eklerken ürün seçimi 500 ürünle
-sınırlı bir açılır liste; Klemsan tek başına 3.694 ürün veriyor. Bu çözülmeden gerçek
-katalogla demo yapılamaz. Ardından güvenlik borcu (parola politikası, `python-jose` →
-`PyJWT`) ve Eylül canlıya çıkış.
+**Sıradaki iş artık ürün değil, çıkış.** Güvenlik borcu (parola politikası,
+`python-jose` → `PyJWT`), Eylül canlıya çıkış ve **akrabaya ilk gösterim** — uçtan uca
+akış çalıştığı için bu artık mümkün. Thufir'in önerisi: gösterimi güvenlik borcundan
+önce yap, çünkü geri bildirim hangi ekranın yeniden yazılacağını belirler.
