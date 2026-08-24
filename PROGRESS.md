@@ -7,6 +7,38 @@
 ---
 
 ## Son oturum
+**Tarih:** 2026-08-24 (Thufir)
+**Yapılan:** `ARAYUZ_ISLERI.md`'deki **"ŞİMDİ — gösterim engelleri"** dördü de kapatıldı.
+Commit `2adb57d`.
+**Test:** 502 geçiyor (dört yeni test: salt okunur satır, tek satır açılması, vazgeç,
+başkasının kalemini açamama).
+
+> ⚠️ **Push edilmedi** — `3276966`'dan `2adb57d`'ye kadar yerelde bekliyor.
+
+### Bu oturumda ne değişti
+
+1. **Kalem satırları salt okunur.** Her kalemin altında sürekli açık duran beş kutuluk
+   form kalktı (15 kalemlik teklifte ~90 kutu ediyordu). Satırda kalem ikonu var;
+   `GET /quotes/{id}/items/{item_id}/edit` gövdeyi o satır açık, `GET /quotes/{id}/body`
+   kapalı döndürüyor. Açık satır **gövdenin bağlamında** (`duzenlenen`) tutuluyor, bu
+   yüzden aynı anda birden fazla satır açılamıyor. Katalogdaki `closest tr` takası
+   seçilmedi: kalem değişince toplam ve zincir de değişiyor, gövde zaten tek parça
+   dönüyor — satır takası ikinci bir tazeleme yolu açardı.
+2. **Genel toplam** tablodan çıkıp koyu blok içinde `text-2xl` oldu.
+3. **Zincir ekleme formu** `<details>` arkasına alındı; ekranda JavaScript yok, ek
+   bağımlılık gerekmedi.
+4. **Müşteri listesindeki `Bakiye` sütunu** kalktı (v1 kapsamı dışı, hepsi 0,00
+   görünüyordu). Model alanı duruyor. Sütun boş bırakılmadı, adrese verildi —
+   `customer_edit_row.html` zaten adres alanını taşıyordu, sütunlar böyle örtüşüyor.
+
+**Sıradaki adım: akrabaya ilk gösterim.** `ARAYUZ_ISLERI.md`'nin "SONRA" başlığındaki
+işlere gösterim geri bildirimi gelmeden girilmeyecek; hangi ekranın yeniden yazılacağını
+o belirleyecek. Altı sorunun ikisi (müşteriye sabit iskonto, metraj başına işçilik)
+teklif ekranını doğrudan etkiliyor.
+
+---
+
+## Önceki oturum
 **Tarih:** 2026-08-21/22 (Thufir)
 **Yapılan:** Beş iş: **teklif motoru**, **içe aktarma**, **teklif ekranı**, **ürün arama**,
 **şablon güçlendirme.** Commit `de10755` → `3276966`.
