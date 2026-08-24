@@ -337,10 +337,11 @@ Bir test şablonu üreten yer ile okuyan yerin ayrışmadığını sabitliyor.
 - **Öznur PDF çevrimi** (Erce'nin düzeltmesi): kesit bazen `4X25` diye büyük harfle
   geçiyordu, regex yalnızca küçük `x` kabul ediyordu.
 
-### Açık
-`tests/fixtures/.../oznur_sablon.xlsx` ve `viko_tl_sablon.xlsx` **eski 5 sütunlu
-biçimde ve git'e eklenmedi.** Yeni şablonla yeniden üretilirlerse kesitleri de girer;
-ham dosyalar zaten çalıştığı için zorunlu değil. Karar Erce'de.
+### Karara bağlandı (24.08)
+`tests/fixtures/.../oznur_sablon.xlsx` ve `viko_tl_sablon.xlsx` **git'e eklenmeyecek.**
+Erce'nin kararı: bunlar sürekli kullanım için değil, tek seferlik test verisi üretmek
+için yapıldı. Diskte dursunlar, repoya girmesinler. Testler ham tedarikçi dosyalarıyla
+koşuyor, ikisine bağımlı değil.
 
 ---
 
@@ -572,6 +573,19 @@ ekle" kolaylığı.
 girdi çıktı — kesit, tedarikçi kodu ve para birimi taşımıyordu, dolayısıyla şablonla
 yüklenen kablo kataloğu aranamıyordu. Şablona dört sütun eklendi ve içe aktarma ürün
 bazlı KDV'yi de okumaya başladı.
+
+**24.08 eki — arayüz ve güvenlik.** Akrabaya gösterimi engelleyen dört arayüz sorunu
+kapandı; en önemlisi teklif ekranındaki kalem satırlarıydı: her kalemin altında beş
+kutuluk bir düzenleme formu sürekli açık duruyordu, 15 kalemlik teklifte ekranda ~90
+kutu vardı. Artık satır salt okunur, tıklanınca tek satır açılıyor.
+
+**Ve canlıya çıkışın önündeki güvenlik borcu kapatıldı.** Bakımsız JWT kütüphanesi
+(`python-jose` → `PyJWT`), parola politikasının hiç olmaması, girişte deneme sınırının
+bulunmaması, e-postanın normalize edilmemesi, hesabın varlığının cevap süresinden
+sızması, güvenlik başlıklarının eksikliği, zayıf `SECRET_KEY`'in mümkün olması. 35 yeni
+testle sabitlendi, toplam 533. Geriye bilerek bırakılan iki madde var ve ikisi de karar
+bekliyor: e-posta doğrulaması (gönderim servisi seçimi) ve CSP'nin `script-src` yarısı
+(Tailwind CDN çıkana kadar anlamlı yazılamıyor).
 
 **Sıradaki iş artık ürün değil, çıkış.** Güvenlik borcu (parola politikası,
 `python-jose` → `PyJWT`), Eylül canlıya çıkış ve **akrabaya ilk gösterim** — uçtan uca
