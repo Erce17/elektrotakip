@@ -8,12 +8,37 @@
 
 ## Son oturum
 **Tarih:** 2026-08-24 (Thufir)
-**Yapılan:** `ARAYUZ_ISLERI.md`'deki **"ŞİMDİ — gösterim engelleri"** dördü de kapatıldı.
-Commit `2adb57d`.
-**Test:** 502 geçiyor (dört yeni test: salt okunur satır, tek satır açılması, vazgeç,
-başkasının kalemini açamama).
+**Yapılan:** İki iş. (1) `ARAYUZ_ISLERI.md`'deki **"ŞİMDİ — gösterim engelleri"** dördü de
+kapatıldı. (2) **Güvenlik borcu kapatıldı** — G6, G7 ve denetimde çıkan dört madde daha.
+Commit `2adb57d` → `6331406`.
+**Test:** 531 geçiyor (33 yeni test).
 
-> ⚠️ **Push edilmedi** — `3276966`'dan `2adb57d`'ye kadar yerelde bekliyor.
+> ⚠️ **Push edilmedi** — `3276966`'dan `6331406`'ya kadar yerelde bekliyor.
+
+### Güvenlik borcu — kapandı
+
+| Açık | Ne yapıldı |
+|---|---|
+| **G6** `python-jose` bakımsız, CVE'li | `PyJWT`'ye geçildi. Algoritma `decode`'da açıkça veriliyor (`alg: none` ve HMAC/RSA karıştırma kapalı), `exp` zorunlu — süresiz token geçmiyor |
+| **G7** parola politikası yok | En az 10 karakter; bcrypt'in 72 bayt sessiz kırpması açıkça reddediliyor. Karakter çeşidi **dayatılmıyor** — büyük harf+rakam+sembol kuralı pratikte `Parola1!` üretiyor, uzunluk aynı işi daha dürüst yapıyor |
+| Girişte deneme sınırı yoktu | Hesap bazlı 5/15dk, IP bazlı 20/15dk, kayıt 5/saat. Kilit **doğrulamadan önce** bakılıyor, yoksa sınır kaba kuvveti durdurmuyor |
+| E-posta normalize edilmiyordu | `Ali@X.com` ile `ali@x.com` iki ayrı hesap oluyordu ve kullanıcı kaydolduğu adresle giriş yapamıyordu |
+| Kullanıcı var/yok zamanlamadan sızıyordu | Kullanıcı yokken de bir kukla bcrypt doğrulaması koşuyor |
+| Güvenlik başlığı yoktu | `X-Frame-Options: DENY` (clickjacking), `nosniff`, `Referrer-Policy`, HTTPS'te HSTS |
+| Zayıf `SECRET_KEY` mümkündü | 32 karakterden kısa veya örnek değer uygulamayı açtırmıyor |
+| `logout` cookie'leri bırakıyordu | `access_token` ve `csrf_token` kurulumdaki niteliklerle siliniyor |
+
+**Bilerek yapılmayanlar — ikisi de karar bekliyor:**
+- **E-posta doğrulaması (G7'nin ikinci yarısı).** Gönderim servisi seçimi Erce'nin;
+  onsuz sahte adresle kayıt mümkün.
+- **CSP başlığı.** Tailwind CDN'den çekildiği ve satır içi stil kullanıldığı sürece
+  konulacak CSP ya ekranı bozar ya `unsafe-inline` ile anlamsız olur. T10 (CDN'in
+  çıkarılması) yapıldığında `app/main.py`'daki başlık middleware'ine eklenmeli.
+
+**Deneme sayacının kabul edilmiş zayıflığı:** süreç belleğinde duruyor. Süreç yeniden
+başlarsa sıfırlanır, birden fazla instance açılırsa her biri kendi sayacını tutar.
+İkincisi olduğu gün paylaşılan sayaca (Redis) taşınmalı — `app/rate_limit.py` başında
+yazılı.
 
 ### Bu oturumda ne değişti
 
@@ -315,10 +340,9 @@ ham dosyalar zaten çalıştığı için zorunlu değil. Karar Erce'de.
 
 ## Sırada
 
-**1. Güvenlik borcu — canlıya çıkmadan zorunlu:**
-- **G7** parola politikası + e-posta doğrulaması yok. Tek karakterlik parola kabul ediliyor.
-- **G6** `python-jose` bakımsız, bilinen CVE'leri var. `PyJWT`'ye geçiş küçük iş.
-- Canlıya çıkarken `SECRET_KEY` ve `COOKIE_SECURE=true` ortam değişkeni olarak verilmeli.
+**1. Güvenlik borcu — ✅ 24.08'de kapatıldı.** Kalan tek madde e-posta doğrulaması ve o
+Erce'nin servis kararını bekliyor. Canlıya çıkarken hâlâ ortam değişkeni olarak verilmeli:
+`SECRET_KEY` (32+ karakter, yoksa uygulama açılmıyor) ve `COOKIE_SECURE=true`.
 
 **2. Canlıya çıkış (Eylül).** Railway trial bitmiş. T10 (Tailwind CDN'den çekiliyor,
 üretim için önerilmiyor) v2'ye kesilmişti ama yazdırma çıktısında zaten CDN
