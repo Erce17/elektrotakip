@@ -11,11 +11,19 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import csrf
+from app import csrf, rate_limit
 from app.database import Base, get_db
 from app.main import app
 from app.models import User
 from app.security import create_access_token, hash_password
+
+
+@pytest.fixture(autouse=True)
+def temiz_deneme_sayaclari():
+    """Deneme sınırı süreç belleğinde duruyor; testler arasında sızmasın."""
+    rate_limit.hepsini_sifirla()
+    yield
+    rate_limit.hepsini_sifirla()
 
 
 @pytest.fixture

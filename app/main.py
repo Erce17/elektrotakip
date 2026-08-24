@@ -22,6 +22,33 @@ app.include_router(quotes.router)
 
 
 @app.middleware("http")
+async def guvenlik_basliklari(request: Request, call_next):
+    """Tarayıcıya uygulanacak asgari kısıtları söyler.
+
+    - `X-Frame-Options: DENY` — sayfa başka sitenin iframe'ine gömülemez.
+      Gömülebilseydi saldırgan teklif ekranını görünmez bir çerçevede açıp
+      kullanıcıya "Sil" düğmesine bastırabilirdi (clickjacking).
+    - `X-Content-Type-Options: nosniff` — yüklenen Excel'i tarayıcı kendi
+      tahminiyle HTML sayıp çalıştırmasın.
+    - `Referrer-Policy` — teklif id'si üçüncü sitelere referrer ile sızmasın.
+
+    CSP bilerek yok: Tailwind CDN'den çekiliyor ve satır içi stil kullanılıyor,
+    bugün konulacak bir CSP ya ekranı bozar ya da `unsafe-inline` ile anlamsız
+    olur. CDN çıkınca (T10) buraya CSP eklenmeli.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    if settings.cookie_secure:
+        # Yalnızca HTTPS'te anlamlı; lokalde http'yi kilitlemesin.
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
+@app.middleware("http")
 async def csrf_cookie(request: Request, call_next):
     """Her istekte bir CSRF token'ı hazır eder ve cookie'de yoksa yerleştirir.
 
