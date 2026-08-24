@@ -569,14 +569,17 @@ def test_bilesen_kalemi_ekrandaki_eslesmeyi_kaydirmaz(client, db_session, kullan
     db_session.commit()
 
     sayfa = client.get(f"/quotes/{teklif_id}").text
-    silme_sirasi = re.findall(rf'hx-delete="/quotes/{teklif_id}/items/(\d+)"', sayfa)
+    # Satır artık salt okunur; kaleme bağlı düğme "düzenle" bağlantısı.
+    duzenle_sirasi = re.findall(
+        rf'hx-get="/quotes/{teklif_id}/items/(\d+)/edit"', sayfa
+    )
 
     assert "bilesen" not in sayfa
-    assert silme_sirasi == [str(birinci.id), str(ikinci.id)]
+    assert duzenle_sirasi == [str(birinci.id), str(ikinci.id)]
 
 
 def test_zincirin_ekledigi_satirin_silme_dugmesi_yok(client, db_session, kullanici):
-    """İşçilik zincirden geliyorsa kalem satırı DB'de yok; silme düğmesi çıkmamalı."""
+    """İşçilik zincirden geliyorsa kalem satırı DB'de yok; düzenleme düğmesi çıkmamalı."""
     import re
 
     teklif_id = teklif_ac(client)
@@ -589,4 +592,63 @@ def test_zincirin_ekledigi_satirin_silme_dugmesi_yok(client, db_session, kullani
     kalem = db_session.query(QuoteItem).one()
 
     assert "Nakliye" in sayfa
-    assert re.findall(rf'hx-delete="/quotes/{teklif_id}/items/(\d+)"', sayfa) == [str(kalem.id)]
+    assert re.findall(
+        rf'hx-get="/quotes/{teklif_id}/items/(\d+)/edit"', sayfa
+    ) == [str(kalem.id)]
+
+
+def test_kalem_satirlari_varsayilan_salt_okunur(client, db_session, kullanici):
+    """Düzenleme kutuları sürekli açık kalmamalı: 15 kalemlik teklifte 90 kutu ediyordu."""
+    teklif_id = teklif_ac(client)
+    client.post(f"/quotes/{teklif_id}/items",
+                data={"name": "birinci", "quantity": "1", "unit_price": "100"})
+    client.post(f"/quotes/{teklif_id}/items",
+                data={"name": "ikinci", "quantity": "1", "unit_price": "200"})
+
+    sayfa = client.get(f"/quotes/{teklif_id}").text
+    birinci, ikinci = db_session.query(QuoteItem).order_by(QuoteItem.position).all()
+
+    # Kalem güncelleme formu hiç kurulmamış olmalı; `name="unit_price"` soldaki
+    # kalem ekleme formunda da geçtiği için ayırt edici olan bu.
+    for kalem in (birinci, ikinci):
+        assert f'hx-post="/quotes/{teklif_id}/items/{kalem.id}"' not in sayfa
+
+
+def test_duzenleme_yalnizca_acilan_kalemde_cikar(client, db_session, kullanici):
+    """Aynı anda tek satır açık olmalı; açık satır gövdenin bağlamından geliyor."""
+    teklif_id = teklif_ac(client)
+    client.post(f"/quotes/{teklif_id}/items",
+                data={"name": "birinci", "quantity": "1", "unit_price": "100"})
+    client.post(f"/quotes/{teklif_id}/items",
+                data={"name": "ikinci", "quantity": "1", "unit_price": "200"})
+    birinci, ikinci = db_session.query(QuoteItem).order_by(QuoteItem.position).all()
+
+    govde = client.get(f"/quotes/{teklif_id}/items/{birinci.id}/edit").text
+
+    assert govde.count('name="unit_price"') == 1
+    assert f'hx-post="/quotes/{teklif_id}/items/{birinci.id}"' in govde
+    assert f'hx-post="/quotes/{teklif_id}/items/{ikinci.id}"' not in govde
+
+
+def test_vazgec_govdeyi_kapali_dondurur(client, db_session, kullanici):
+    teklif_id = teklif_ac(client)
+    client.post(f"/quotes/{teklif_id}/items",
+                data={"name": "birinci", "quantity": "1", "unit_price": "100"})
+
+    govde = client.get(f"/quotes/{teklif_id}/body").text
+
+    assert 'name="unit_price"' not in govde
+    assert "birinci" in govde
+
+
+def test_baskasinin_kalemi_duzenlemeye_acilamaz(client, db_session, kullanici, make_user, login_as):
+    teklif_id = teklif_ac(client)
+    client.post(f"/quotes/{teklif_id}/items",
+                data={"name": "birinci", "quantity": "1", "unit_price": "100"})
+    kalem = db_session.query(QuoteItem).one()
+
+    _, token = make_user("baskasi@example.com")
+    login_as(token)
+
+    assert client.get(f"/quotes/{teklif_id}/items/{kalem.id}/edit").status_code == 404
+    assert client.get(f"/quotes/{teklif_id}/body").status_code == 404

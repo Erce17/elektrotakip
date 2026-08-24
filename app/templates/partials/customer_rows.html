@@ -2,9 +2,9 @@
 <tr class="hover:bg-slate-50 transition">
     <td class="px-6 py-4 font-medium text-slate-800">{{ customer.name }}</td>
     <td class="px-6 py-4 text-slate-500">{{ customer.phone or '-' }}</td>
-    <td class="px-6 py-4 font-semibold text-right {% if customer.balance > 0 %}text-red-600{% elif customer.balance < 0 %}text-emerald-600{% else %}text-slate-500{% endif %}">
-        {{ "{:,.2f}".format(customer.balance).replace(',', 'X').replace('.', ',').replace('X', '.') }} ₺
-    </td>
+    {# Bakiye v1 kapsamından çıktı (20.08.2026); sütun adrese verildi. Düzenleme
+       satırı zaten adres alanını taşıyordu, iki satırın sütunları böyle örtüşüyor. #}
+    <td class="px-6 py-4 text-slate-500">{{ customer.address or '-' }}</td>
     <td class="px-6 py-4 text-center">
         <div class="flex justify-center space-x-2">
             <button hx-get="/customers/{{ customer.id }}/edit"

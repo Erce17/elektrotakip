@@ -172,17 +172,23 @@ def zincir_sirasi(quote: Quote) -> int:
     return max((a.position for a in quote.adjustments), default=-1) + 1
 
 
-def govde_yaniti(request: Request, db: Session, quote: Quote) -> HTMLResponse:
+def govde_yaniti(
+    request: Request, db: Session, quote: Quote, duzenlenen: int | None = None
+) -> HTMLResponse:
     """Teklifin kalem + zincir + toplam bölümünü yeniden çizer.
 
     Her değişiklikten sonra tek parça dönüyoruz: bir kalemin iskontosu teklifin
     toplamını da değiştiriyor, kısmi güncelleme ikisini ayrı tutmayı gerektirirdi.
+
+    `duzenlenen` açık düzenleme satırının kalem id'si. Gövdenin bağlamında tutuluyor
+    çünkü aynı anda tek satır açık olmalı; satır bazlı takas iki satırı birden açık
+    bırakabilirdi.
     """
     db.refresh(quote)
     return templates.TemplateResponse(
         request,
         "partials/quote_body.html",
-        govde_baglami(db, quote),
+        govde_baglami(db, quote, duzenlenen),
     )
 
 
@@ -191,7 +197,7 @@ def kullanici_urunleri(db: Session, user_id: int):
     return db.query(Product).join(Category).filter(Category.user_id == user_id)
 
 
-def govde_baglami(db: Session, quote: Quote) -> dict:
+def govde_baglami(db: Session, quote: Quote, duzenlenen: int | None = None) -> dict:
     sonuc = quote_service.hesapla(quote)
 
     # Motorun çıktısını DB kaydıyla açıkça eşleştiriyoruz. Şablonda indeks saymak
@@ -210,6 +216,7 @@ def govde_baglami(db: Session, quote: Quote) -> dict:
         "zincir_ciftleri": zincir_ciftleri,
         "zincir_turleri": ZINCIR_TURLERI,
         "kalem_turleri": KALEM_TURLERI,
+        "duzenlenen": duzenlenen,
     }
 
 
@@ -581,6 +588,38 @@ def add_item(
     db.commit()
 
     return govde_yaniti(request, db, quote)
+
+
+@router.get("/{quote_id}/body", response_class=HTMLResponse)
+def get_quote_body(
+    request: Request,
+    quote_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """Gövdeyi düzenleme satırı kapalı hâlde tazeler — "Vazgeç" bunu çağırıyor."""
+    quote = get_owned_quote(db, current_user, quote_id)
+    if quote is None:
+        return HTMLResponse("Teklif bulunamadı.", status_code=404)
+    return govde_yaniti(request, db, quote)
+
+
+@router.get("/{quote_id}/items/{item_id}/edit", response_class=HTMLResponse)
+def edit_item(
+    request: Request,
+    quote_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """Tek kalemin düzenleme satırını açar."""
+    quote = get_owned_quote(db, current_user, quote_id)
+    if quote is None:
+        return HTMLResponse("Teklif bulunamadı.", status_code=404)
+    item = get_owned_item(db, quote, item_id)
+    if item is None:
+        return HTMLResponse("Kalem bulunamadı.", status_code=404)
+    return govde_yaniti(request, db, quote, duzenlenen=item.id)
 
 
 @router.post("/{quote_id}/items/{item_id}", response_class=HTMLResponse)

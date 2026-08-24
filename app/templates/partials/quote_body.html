@@ -55,16 +55,22 @@
                     </td>
                     <td class="px-2 py-2 text-right">
                         {% if item %}
-                        <button hx-delete="/quotes/{{ quote.id }}/items/{{ item.id }}"
+                        <button hx-get="/quotes/{{ quote.id }}/items/{{ item.id }}/edit"
                                 hx-target="#teklif-govde" hx-swap="outerHTML"
-                                hx-confirm="Bu kalem silinsin mi?"
-                                class="text-red-600 hover:text-red-800 text-xs">Sil</button>
+                                class="text-slate-400 hover:text-blue-600 transition p-1 rounded hover:bg-blue-50"
+                                title="Düzenle">
+                            <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                        </button>
                         {% endif %}
                     </td>
                 </tr>
-                {% if item %}
-                <tr class="bg-slate-50/50">
-                    <td colspan="7" class="px-4 pb-3">
+                {# Düzenleme satırı yalnızca açık olan kalem için çiziliyor. Açık kalem
+                   gövdenin bağlamından (`duzenlenen`) geliyor, satırın kendisinden değil;
+                   bu yüzden aynı anda birden fazla satır açılamıyor. Gövde zaten her
+                   değişiklikte tek parça dönüyor, ayrı bir satır takası gerekmiyor. #}
+                {% if item and duzenlenen == item.id %}
+                <tr class="bg-blue-50/60 border-y-2 border-blue-200">
+                    <td colspan="7" class="px-4 py-3">
                         <form hx-post="/quotes/{{ quote.id }}/items/{{ item.id }}"
                               hx-target="#teklif-govde" hx-swap="outerHTML"
                               class="flex flex-wrap items-end gap-2 text-xs">
@@ -94,8 +100,21 @@
                                        {% if item.discountable %}checked{% endif %}>
                                 <span class="text-slate-500">iskontoya tabi</span>
                             </label>
-                            <button type="submit" class="px-3 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded">
-                                Güncelle
+                            <button type="submit" class="px-3 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded">
+                                Kaydet
+                            </button>
+                            <button type="button"
+                                    hx-get="/quotes/{{ quote.id }}/body"
+                                    hx-target="#teklif-govde" hx-swap="outerHTML"
+                                    class="px-3 py-1 bg-slate-400 hover:bg-slate-500 text-white rounded">
+                                Vazgeç
+                            </button>
+                            <button type="button"
+                                    hx-delete="/quotes/{{ quote.id }}/items/{{ item.id }}"
+                                    hx-target="#teklif-govde" hx-swap="outerHTML"
+                                    hx-confirm="Bu kalem silinsin mi?"
+                                    class="px-3 py-1 text-red-600 hover:text-red-800">
+                                Sil
                             </button>
                         </form>
                     </td>
@@ -177,7 +196,15 @@
     </div>
     {% endif %}
 
-    <div class="px-6 py-4 bg-slate-50 border-t border-slate-200">
+    {# Form varsayılan kapalı: yedi alan sürekli açıkken zincir tablosunun kendisini
+       bastırıyordu. <details> seçildi çünkü bu ekranda açılır kapanır davranış için
+       JavaScript yok; alanlar ve gönderim aynı kaldı. #}
+    <details class="bg-slate-50 border-t border-slate-200 group">
+        <summary class="px-6 py-3 cursor-pointer text-sm font-medium text-blue-700 hover:text-blue-900 select-none list-none flex items-center gap-1">
+            <span class="group-open:hidden">+ Adım ekle</span>
+            <span class="hidden group-open:inline">− Vazgeç</span>
+        </summary>
+        <div class="px-6 pb-4">
         <form hx-post="/quotes/{{ quote.id }}/adjustments" hx-target="#teklif-govde" hx-swap="outerHTML"
               class="flex flex-wrap items-end gap-2 text-xs">
             <label class="flex flex-col">
@@ -232,7 +259,8 @@
             liste tutarını taban alır. İşçiliği liste tutarının yüzdesi olarak hesaplıyorsan
             ikincisini seç.
         </p>
-    </div>
+        </div>
+    </details>
 </div>
 
 {# --- Toplamlar --- #}
@@ -261,14 +289,17 @@
                 <td class="py-1 text-right text-slate-600">{{ dagilim[1] | fiyat }}</td>
             </tr>
             {% endfor %}
-            <tr class="border-t-2 border-slate-300">
-                <td class="py-2 text-lg font-bold text-slate-800">Genel Toplam</td>
-                <td class="py-2 text-right text-lg font-bold text-slate-800">
-                    {{ sonuc.genel_toplam | fiyat }} {{ quote.currency }}
-                </td>
-            </tr>
         </tbody>
     </table>
+
+    {# Genel toplam tablodan çıkarıldı: tablo satırı olarak "Para Birimi" seçicisiyle
+       aynı ağırlıkta kalıyordu. Teklifin satın alınan rakamı bu, tek başına duruyor. #}
+    <div class="mt-4 rounded-xl bg-slate-800 text-white px-6 py-4 flex items-center justify-between gap-4">
+        <span class="text-sm font-medium text-slate-300 uppercase tracking-wide">Genel Toplam</span>
+        <span class="text-2xl font-bold whitespace-nowrap">
+            {{ sonuc.genel_toplam | fiyat }} {{ quote.currency }}
+        </span>
+    </div>
     {% if quote.valid_until %}
     <p class="text-xs text-slate-400 mt-4">
         Fiyatlar {{ quote.valid_until.strftime('%d.%m.%Y') }} tarihine kadar geçerlidir.
