@@ -238,6 +238,27 @@ def test_guvenlik_basliklari_gonderiliyor(client):
     assert yanit.headers["Referrer-Policy"] == "same-origin"
 
 
+def test_csp_cdnye_bagli_olmayan_direktifleri_tasiyor(client):
+    csp = client.get("/login").headers["Content-Security-Policy"]
+
+    assert "base-uri 'none'" in csp
+    assert "form-action 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert "object-src 'none'" in csp
+
+
+def test_csp_unsafe_inline_icermiyor(client):
+    """Asıl kural bu: `unsafe-inline` girerse CSP koruma değil süs olur.
+
+    T10'da `script-src`/`style-src` eklenirken bu test uyarı görevi görecek —
+    CDN çıkmadan eklenmeye çalışılırsa burada patlar.
+    """
+    csp = client.get("/login").headers["Content-Security-Policy"]
+
+    assert "unsafe-inline" not in csp
+    assert "unsafe-eval" not in csp
+
+
 def test_cikis_oturum_cookiesini_siliyor(client, db_session):
     kayit_ol(client, eposta="ali@example.com")
     client.post(

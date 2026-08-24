@@ -95,7 +95,7 @@ Amaç kodun temizlenmesi kadar Erce'nin kendi projesini tanıması.
 - Şema değişikliği = Alembic migration. Elle DB'ye dokunma.
 - `.env` asla commit edilmez, içeriği loglanmaz.
 - `git push` sormadan yapılmaz. Remote: `github.com/Erce17/elektrotakip`
-- `uv run pytest` → 531 test, bellekte SQLite, PostgreSQL gerekmiyor. Yeni yazdığın
+- `uv run pytest` → 533 test, bellekte SQLite, PostgreSQL gerekmiyor. Yeni yazdığın
   kritik mantığa test ekle; ayrıştırma/hesap tarafına dokunuyorsan **önce** testi koştur.
 - Ayrıştırma testleri `tests/fixtures/tedarikci_listeleri/` altındaki 11 gerçek dosyaya
   karşı koşuyor. Uydurma fixture'la doğrulanmış sayma — bu oturumda beş sessiz veri

@@ -11,7 +11,7 @@
 **Yapılan:** İki iş. (1) `ARAYUZ_ISLERI.md`'deki **"ŞİMDİ — gösterim engelleri"** dördü de
 kapatıldı. (2) **Güvenlik borcu kapatıldı** — G6, G7 ve denetimde çıkan dört madde daha.
 Commit `2adb57d` → `6331406`.
-**Test:** 531 geçiyor (33 yeni test).
+**Test:** 533 geçiyor (35 yeni test).
 
 > ⚠️ **Push edilmedi** — `3276966`'dan `6331406`'ya kadar yerelde bekliyor.
 
@@ -31,9 +31,15 @@ Commit `2adb57d` → `6331406`.
 **Bilerek yapılmayanlar — ikisi de karar bekliyor:**
 - **E-posta doğrulaması (G7'nin ikinci yarısı).** Gönderim servisi seçimi Erce'nin;
   onsuz sahte adresle kayıt mümkün.
-- **CSP başlığı.** Tailwind CDN'den çekildiği ve satır içi stil kullanıldığı sürece
-  konulacak CSP ya ekranı bozar ya `unsafe-inline` ile anlamsız olur. T10 (CDN'in
-  çıkarılması) yapıldığında `app/main.py`'daki başlık middleware'ine eklenmeli.
+- **CSP'nin `script-src`/`style-src` yarısı.** Tailwind CDN tarayıcıda çalışan bir
+  derleyici (CSS'i çalışma anında üretip `<style>` olarak enjekte ediyor) ve
+  `quote_print.html`'de bir `onclick` var; ikisi de `unsafe-inline` isterdi. Onu
+  yazmak CSP'nin engellemek için var olduğu şeye izin vermek olurdu — başlık durur,
+  koruma olmaz. **CDN'e bağlı olmayan yarısı konuldu:** `base-uri 'none'`,
+  `form-action 'self'`, `frame-ancestors 'none'`, `object-src 'none'`. T10'da üstüne
+  `default-src 'self'; script-src 'self'; style-src 'self'` gelecek; bir test
+  (`test_csp_unsafe_inline_icermiyor`) o gün yanlışlıkla `unsafe-inline` eklenirse
+  patlıyor.
 
 **Deneme sayacının kabul edilmiş zayıflığı:** süreç belleğinde duruyor. Süreç yeniden
 başlarsa sıfırlanır, birden fazla instance açılırsa her biri kendi sayacını tutar.

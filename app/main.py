@@ -12,6 +12,24 @@ from app.models import Category, Customer, Product, Quote, User
 from app.routers import auth, catalog, customers, quotes
 
 
+# CDN'e bağlı olmayan CSP direktifleri. `script-src`/`style-src` T10'da (Tailwind
+# CDN'in çıkarılması) eklenecek; o gün hedef şu:
+#     default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:
+CSP_DIREKTIFLERI = "; ".join([
+    # `<base>` etiketi enjekte edilip tüm göreli bağlantılar saldırganın
+    # sunucusuna çevrilemesin.
+    "base-uri 'none'",
+    # Sayfadaki form başka bir siteye gönderilemez: giriş formuna sokulan bir
+    # `action` ile parola dışarı postalanamaz.
+    "form-action 'self'",
+    # X-Frame-Options'ın modern karşılığı; ikisi birden duruyor çünkü eski
+    # tarayıcılar yalnızca birincisini biliyor.
+    "frame-ancestors 'none'",
+    # Flash/applet kalıntısı; bedava kapanıyor.
+    "object-src 'none'",
+])
+
+
 # CSRF doğrulaması uygulama geneli: route'a tek tek eklenmediği için unutulamaz
 app = FastAPI(title="ElektroTakip", dependencies=[Depends(csrf.verify_csrf)])
 
@@ -32,14 +50,18 @@ async def guvenlik_basliklari(request: Request, call_next):
       tahminiyle HTML sayıp çalıştırmasın.
     - `Referrer-Policy` — teklif id'si üçüncü sitelere referrer ile sızmasın.
 
-    CSP bilerek yok: Tailwind CDN'den çekiliyor ve satır içi stil kullanılıyor,
-    bugün konulacak bir CSP ya ekranı bozar ya da `unsafe-inline` ile anlamsız
-    olur. CDN çıkınca (T10) buraya CSP eklenmeli.
+    CSP kısmi: `script-src`/`style-src` bilerek **yok**. Tailwind CDN tarayıcıda
+    çalışan bir derleyici (CSS'i çalışma anında üretip `<style>` olarak enjekte
+    ediyor) ve `quote_print.html`'de bir `onclick` var; ikisi de `unsafe-inline`
+    isterdi. `script-src 'unsafe-inline'` yazmak CSP'nin engellemek için var
+    olduğu şeye izin vermek demek — başlık durur, koruma olmaz. Yanlış güven
+    eksik korumadan kötü, o yüzden konmadı. Bkz. CSP_DIREKTIFLERI.
     """
     response = await call_next(request)
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Content-Security-Policy", CSP_DIREKTIFLERI)
     if settings.cookie_secure:
         # Yalnızca HTTPS'te anlamlı; lokalde http'yi kilitlemesin.
         response.headers.setdefault(
